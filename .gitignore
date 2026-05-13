@@ -1,0 +1,10 @@
+.DS_Store
+.codex
+node_modules
+dist
+coverage
+.npm-cache
+output
+.env
+.env.*
+*.log

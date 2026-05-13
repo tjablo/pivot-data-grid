@@ -1,0 +1,438 @@
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { useState } from 'react';
+import { describe, expect, it, vi } from 'vitest';
+import { pivotData } from '../core/pivot';
+import type { PivotFieldConfig, PivotModel, RowData, SourceFilter } from '../core/types';
+import { DataGrid } from '../react/DataGrid';
+import { PivotTable } from '../react/PivotTable';
+
+const rows: RowData[] = [
+  { product: 'Laptop', region: 'EMEA', amount: 100, orderedAt: '2026-01-01' },
+  { product: 'Laptop', region: 'AMER', amount: 200, orderedAt: '2026-01-02' },
+  { product: 'Monitor', region: 'EMEA', amount: 50, orderedAt: '2026-01-03' },
+];
+
+const fields: PivotFieldConfig[] = [
+  { field: 'product', label: 'Product', role: 'dimension', type: 'string' },
+  { field: 'region', label: 'Region', role: 'dimension', type: 'string' },
+  { field: 'amount', label: 'Amount', role: 'value', type: 'number', valueTone: 'signed' },
+  { field: 'orderedAt', label: 'Ordered at', role: 'filter-only', type: 'date' },
+];
+
+describe('DataGrid', () => {
+  it('renders rows, allows copyable cells, and sorts when a sortable header is clicked', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    const gridRows = [...rows, { product: 'Refund', region: 'AMER', amount: -25, orderedAt: '2026-01-04' }];
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+
+    render(
+      <DataGrid
+        rows={gridRows}
+        showColumnMenu={false}
+        frozenColumnCount={1}
+        columns={[
+          { id: 'product', header: 'Product', accessor: 'product', sortable: true, copyable: true },
+          { id: 'amount', header: 'Amount', accessor: 'amount', sortable: true, align: 'right', copyable: true, valueTone: 'signed' },
+        ]}
+      />,
+    );
+
+    expect(screen.getAllByText('Laptop')).toHaveLength(2);
+    expect(screen.getByRole('grid').closest('.pg-data-grid-shell')).toHaveClass('pg-root');
+    expect(screen.getAllByText('Laptop')[0].closest('[role="gridcell"]')).toHaveClass('pg-grid-cell-frozen');
+    expect(screen.getByText('100').closest('[role="gridcell"]')).toHaveClass('pg-grid-cell-tone-positive');
+    expect(screen.getByText('-25').closest('[role="gridcell"]')).toHaveClass('pg-grid-cell-tone-negative');
+    fireEvent.click(screen.getAllByRole('button', { name: 'Copy cell value' })[0]);
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('Laptop'));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Copied' })).toBeInTheDocument());
+    expect(screen.getByRole('status')).toHaveTextContent('Copied');
+    fireEvent.click(screen.getAllByRole('button', { name: 'Copy cell value' }).at(-1) as HTMLElement);
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('-25'));
+
+    const amountHeader = screen.getByRole('columnheader', { name: /Amount/ });
+    expect(amountHeader.querySelector('.pg-sort-indicator')).toBeNull();
+
+    fireEvent.click(amountHeader);
+    expect(amountHeader).toHaveAttribute('aria-sort', 'ascending');
+    expect(amountHeader.querySelector('.pg-sort-indicator')).not.toBeNull();
+
+    fireEvent.click(amountHeader);
+    expect(amountHeader).toHaveAttribute('aria-sort', 'descending');
+
+    fireEvent.click(amountHeader);
+    expect(amountHeader).toHaveAttribute('aria-sort', 'none');
+    expect(amountHeader.querySelector('.pg-sort-indicator')).toBeNull();
+  });
+
+  it('adds a title tooltip when cell text is truncated', async () => {
+    const longValue = 'Very long transaction identifier that should be truncated';
+    const scrollWidthDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollWidth');
+    const clientWidthDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientWidth');
+
+    Object.defineProperty(HTMLElement.prototype, 'scrollWidth', {
+      configurable: true,
+      get: () => 240,
+    });
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
+      configurable: true,
+      get: () => 40,
+    });
+
+    try {
+      render(
+        <DataGrid rows={[{ id: longValue }]} columns={[{ id: 'id', header: 'ID', accessor: 'id', width: 80 }]} showColumnMenu={false} />,
+      );
+
+      const content = screen.getByText(longValue).closest('.pg-grid-cell-content');
+      await waitFor(() => expect(content).toHaveAttribute('title', longValue));
+    } finally {
+      if (scrollWidthDescriptor) Object.defineProperty(HTMLElement.prototype, 'scrollWidth', scrollWidthDescriptor);
+      else delete (HTMLElement.prototype as { scrollWidth?: number }).scrollWidth;
+
+      if (clientWidthDescriptor) Object.defineProperty(HTMLElement.prototype, 'clientWidth', clientWidthDescriptor);
+      else delete (HTMLElement.prototype as { clientWidth?: number }).clientWidth;
+    }
+  });
+
+  it('paginates rows and allows changing rows per page', async () => {
+    render(
+      <DataGrid
+        rows={[
+          { product: 'Alpha', amount: 10 },
+          { product: 'Beta', amount: 20 },
+          { product: 'Gamma', amount: 30 },
+          { product: 'Delta', amount: 40 },
+        ]}
+        columns={[
+          { id: 'product', header: 'Product', accessor: 'product' },
+          { id: 'amount', header: 'Amount', accessor: 'amount', align: 'right' },
+        ]}
+        showColumnMenu={false}
+        pagination
+        defaultPaginationState={{ pageSize: 2 }}
+        pageSizeOptions={[2, 3]}
+      />,
+    );
+
+    expect(screen.getByText('Page 1 of 2 (4 rows)')).toBeInTheDocument();
+    expect(screen.getByText('Alpha')).toBeInTheDocument();
+    expect(screen.queryByText('Gamma')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+    expect(screen.getByText('Page 2 of 2 (4 rows)')).toBeInTheDocument();
+    expect(screen.getByText('Gamma')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Previous page' }));
+    fireEvent.click(screen.getByRole('combobox', { name: 'Rows per page' }));
+    const pageSizeOption = await screen.findByRole('option', { name: '3' });
+    expect(pageSizeOption.closest('.pg-data-grid-shell')).not.toBeNull();
+    fireEvent.click(pageSizeOption);
+    expect(screen.getByText('Gamma')).toBeInTheDocument();
+  });
+
+  it('uses default pagination settings when only pagination is enabled', () => {
+    render(
+      <DataGrid
+        rows={Array.from({ length: 30 }, (_, index) => ({ id: `row-${index + 1}` }))}
+        columns={[{ id: 'id', header: 'ID', accessor: 'id' }]}
+        showColumnMenu={false}
+        pagination
+      />,
+    );
+
+    expect(screen.getByText('Page 1 of 2 (30 rows)')).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Rows per page' })).toHaveTextContent('25');
+  });
+});
+
+describe('PivotTable', () => {
+  it('renders a client-side pivot and opens drill-in rows', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+
+    render(
+      <PivotTable
+        data={rows}
+        fields={fields.map((field) => (field.field === 'amount' ? { ...field, copyable: true } : field))}
+        defaultPivotModel={{
+          rows: ['product'],
+          columns: ['region'],
+          values: [{ field: 'amount', aggFunc: 'sum' }],
+        }}
+        entityName="orders"
+      />,
+    );
+
+    expect(screen.getByText('3 orders')).toBeInTheDocument();
+    expect(screen.getByText('2 groups')).toBeInTheDocument();
+
+    const grid = screen.getByRole('grid');
+    const amountCell = within(grid).getAllByRole('gridcell', { name: '200' })[0];
+    expect(amountCell).toHaveClass('pg-grid-cell-tone-positive');
+    fireEvent.click(within(amountCell).getByRole('button', { name: 'Copy cell value' }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('200'));
+    fireEvent.click(amountCell);
+
+    expect(await screen.findByRole('region', { name: 'Drilldown rows' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Product: Laptop / Region: AMER' })).toBeInTheDocument();
+    expect(screen.getAllByRole('gridcell', { name: 'AMER' })).not.toHaveLength(0);
+  });
+
+  it('updates pivot controls and source filters', () => {
+    render(
+      <PivotTable
+        data={rows}
+        fields={fields}
+        defaultPivotModel={{
+          rows: ['product'],
+          columns: ['region'],
+          values: [{ field: 'amount', aggFunc: 'sum' }],
+        }}
+        entityName="orders"
+        deferFilterUpdates
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText('Rows'), { target: { value: 'region' } });
+    expect(screen.getByLabelText('Rows')).toHaveValue('region');
+
+    const filterTrigger = screen.getByRole('button', { name: 'Source data filters' });
+    filterTrigger.focus();
+    fireEvent.keyDown(filterTrigger, { key: 'Enter', code: 'Enter' });
+    const filterMenuTitle = screen.getByText('Source data filters');
+    expect(filterMenuTitle).toBeInTheDocument();
+    expect(filterMenuTitle.closest('.pg-root')).not.toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add filter' }));
+    fireEvent.change(screen.getByLabelText('Filter value from'), { target: { value: '2026-01-01' } });
+    fireEvent.change(screen.getByLabelText('Filter value to'), { target: { value: '2026-01-02' } });
+    expect(screen.getByText('2 / 3 orders')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove filter' }));
+    expect(screen.queryByLabelText('Filter value from')).not.toBeInTheDocument();
+  });
+
+  it('uses label overrides for built-in UI text', () => {
+    render(
+      <PivotTable
+        data={rows}
+        fields={fields}
+        defaultPivotModel={{
+          rows: ['product'],
+          columns: ['region'],
+          values: [{ field: 'amount', aggFunc: 'sum' }],
+        }}
+        entityName="zamówienia"
+        labels={{
+          rowField: 'Wiersze',
+          sourceFilters: 'Filtry danych',
+          addFilter: 'Dodaj filtr',
+          filterValue: 'Wartość',
+          recordCount: (filtered, total, entityName) => `${filtered}/${total} ${entityName}`,
+          groupCount: (count) => `${count} grupy`,
+        }}
+      />,
+    );
+
+    expect(screen.getByLabelText('Wiersze')).toBeInTheDocument();
+    expect(screen.getByText('3/3 zamówienia')).toBeInTheDocument();
+    expect(screen.getByText('2 grupy')).toBeInTheDocument();
+
+    const filterTrigger = screen.getByRole('button', { name: 'Filtry danych' });
+    filterTrigger.focus();
+    fireEvent.keyDown(filterTrigger, { key: 'Enter', code: 'Enter' });
+
+    expect(screen.getByText('Filtry danych')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Dodaj filtr' })).toBeInTheDocument();
+  });
+
+  it('renders date range controls for filter-only date fields', async () => {
+    function DateFilterHarness() {
+      const [activeFilters, setActiveFilters] = useState<SourceFilter[]>([
+        { id: 'date-range', field: 'orderedAt', operator: 'between', value: '2026-01-01', valueTo: '2026-01-02' },
+      ]);
+
+      return (
+        <PivotTable
+          data={rows}
+          fields={fields}
+          defaultPivotModel={{
+            rows: ['product'],
+            columns: ['region'],
+            values: [{ field: 'amount', aggFunc: 'sum' }],
+          }}
+          filters={activeFilters}
+          onFiltersChange={setActiveFilters}
+          entityName="orders"
+        />
+      );
+    }
+
+    render(<DateFilterHarness />);
+
+    expect(screen.getByText('2 / 3 orders')).toBeInTheDocument();
+
+    const filterTrigger = screen.getByRole('button', { name: 'Source data filters' });
+    filterTrigger.focus();
+    fireEvent.keyDown(filterTrigger, { key: 'Enter', code: 'Enter' });
+
+    expect(screen.getByLabelText('Filter value from')).toHaveAttribute('type', 'text');
+    expect(screen.getByLabelText('Filter value to')).toHaveAttribute('type', 'text');
+
+    const calendarTriggers = screen.getAllByRole('button', { name: 'Open calendar' });
+    fireEvent.click(calendarTriggers[0]);
+    expect(screen.getByRole('dialog', { name: 'Calendar' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Select January 3, 2026' }));
+    await waitFor(() => expect(screen.getByLabelText('Filter value from')).toHaveValue('2026-01-03'));
+  });
+
+  it('uses server mode drilldown rows returned from drillDown.onLoad', async () => {
+    const pivotResult = pivotData(rows, {
+      rows: ['product'],
+      columns: ['region'],
+      values: [{ field: 'amount', aggFunc: 'sum' }],
+    });
+    const loadDrillDownRows = vi.fn().mockResolvedValue([rows[1]]);
+
+    render(
+      <PivotTable
+        pivotResult={pivotResult}
+        fields={fields}
+        pivotModel={{
+          rows: ['product'],
+          columns: ['region'],
+          values: [{ field: 'amount', aggFunc: 'sum' }],
+        }}
+        drillDown={{ onLoad: loadDrillDownRows }}
+        entityName="orders"
+      />,
+    );
+
+    const grid = screen.getByRole('grid');
+    fireEvent.click(within(grid).getAllByRole('gridcell', { name: '200' })[0]);
+
+    await waitFor(() => expect(loadDrillDownRows).toHaveBeenCalledTimes(1));
+    expect(await screen.findByRole('region', { name: 'Drilldown rows' })).toBeInTheDocument();
+    expect(screen.getAllByRole('gridcell', { name: 'AMER' })).not.toHaveLength(0);
+  });
+
+  it('can disable drilldown through the scoped drillDown mode', () => {
+    const pivotResult = pivotData(rows, {
+      rows: ['product'],
+      columns: ['region'],
+      values: [{ field: 'amount', aggFunc: 'sum' }],
+    });
+    const onOpen = vi.fn();
+
+    render(
+      <PivotTable
+        pivotResult={pivotResult}
+        fields={fields}
+        pivotModel={{
+          rows: ['product'],
+          columns: ['region'],
+          values: [{ field: 'amount', aggFunc: 'sum' }],
+        }}
+        entityName="orders"
+        drillDown={{ mode: 'none', onOpen }}
+      />,
+    );
+
+    fireEvent.click(within(screen.getByRole('grid')).getAllByRole('gridcell', { name: '200' })[0]);
+
+    expect(onOpen).not.toHaveBeenCalled();
+    expect(screen.queryByRole('region', { name: 'Drilldown rows' })).not.toBeInTheDocument();
+  });
+
+  it('supports backend pagination for server-mode pivot rows', () => {
+    const model: PivotModel = {
+      rows: ['product'],
+      columns: ['region'],
+      values: [{ field: 'amount', aggFunc: 'sum' }],
+    };
+    const fullResult = pivotData([...rows, { product: 'Phone', region: 'APAC', amount: 80, orderedAt: '2026-01-04' }], model);
+    const onPaginationChange = vi.fn();
+
+    render(
+      <PivotTable
+        pivotResult={{ ...fullResult, rows: fullResult.rows.slice(0, 2) }}
+        fields={fields}
+        pivotModel={model}
+        entityName="orders"
+        pagination={{
+          mode: 'server',
+          totalRows: fullResult.rows.length,
+          state: { pageIndex: 0, pageSize: 1 },
+          onChange: onPaginationChange,
+          pageSizeOptions: [1, 2],
+        }}
+      />,
+    );
+
+    const grid = screen.getByRole('grid');
+    expect(screen.getByText('3 groups')).toBeInTheDocument();
+    expect(screen.getByText('Page 1 of 3 (3 rows)')).toBeInTheDocument();
+    expect(within(grid).getByRole('gridcell', { name: 'Laptop' })).toBeInTheDocument();
+    expect(within(grid).getByRole('gridcell', { name: 'Monitor' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+    expect(onPaginationChange).toHaveBeenCalledWith({ pageIndex: 1, pageSize: 1 });
+  });
+
+  it('supports backend pagination for server-mode drilldown rows', async () => {
+    const pivotResult = pivotData(rows, {
+      rows: ['product'],
+      columns: ['region'],
+      values: [{ field: 'amount', aggFunc: 'sum' }],
+    });
+    const handleDrillDownPageChange = vi.fn();
+
+    render(
+      <PivotTable
+        pivotResult={pivotResult}
+        fields={fields}
+        pivotModel={{
+          rows: ['product'],
+          columns: ['region'],
+          values: [{ field: 'amount', aggFunc: 'sum' }],
+        }}
+        entityName="orders"
+        pagination={false}
+        drillDown={{
+          rows: [rows[1], rows[2]],
+          pagination: {
+            mode: 'server',
+            totalRows: 3,
+            state: { pageIndex: 0, pageSize: 1 },
+            pageSizeOptions: [1, 2],
+            onChange: handleDrillDownPageChange,
+          },
+        }}
+      />,
+    );
+
+    fireEvent.click(within(screen.getByRole('grid')).getAllByRole('gridcell', { name: '200' })[0]);
+
+    const drilldown = await screen.findByRole('region', { name: 'Drilldown rows' });
+    const grid = within(drilldown).getByRole('grid');
+    expect(screen.getByText('Page 1 of 3 (3 rows)')).toBeInTheDocument();
+    expect(within(grid).getByRole('gridcell', { name: 'Monitor' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+    expect(handleDrillDownPageChange).toHaveBeenCalledWith(
+      { pageIndex: 1, pageSize: 1 },
+      expect.objectContaining({
+        rowValues: { product: 'Laptop' },
+        columnValues: { region: 'AMER' },
+        valueField: 'amount',
+      }),
+    );
+  });
+});
