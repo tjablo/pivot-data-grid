@@ -6,12 +6,16 @@ This project follows Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.1.0-alpha.1] - 2026-05-14
+
 ### Added
 
 - Managed backend `getPage` loaders for `PivotTable` pivot pages and drilldown pages, including page state, loading state, total row counts, server sort state, abort signals, and stale-response protection.
 - Dedicated client-side and server-side usage guides.
 - Values menu controls for adding, editing, and removing multiple value aggregations in one pivot.
 - Pivot loading skeletons for initial server loads before a first `PivotResult` exists.
+- Generated pivot column sizing through `columnSizing`, including `width`, `minWidth`, and `maxWidth` for row, count, value, total, and loading columns.
+- Playground sample data with million-scale decimal values and copyable numeric metrics.
 
 ### Changed
 
@@ -20,6 +24,12 @@ This project follows Semantic Versioning.
 - Removed the pre-release `drillDown.onLoad` shortcut and first-dimension drilldown request fields in favor of `drillDown.getPage` and full `rowValues` / `columnValues` scope.
 - Source filter menu edits are deferred until the filter menu closes by default, reducing unnecessary client recomputation and backend requests.
 - Included `docs` in the published package so README documentation links resolve from npm.
+- Copy feedback now uses the icon state only instead of rendering a separate copied status tooltip.
+
+### Fixed
+
+- Drilldown grids omit scoped row and column dimension fields already shown in the drilldown title.
+- Truncated grid headers and cells use an immediate custom tooltip with corrected right-edge positioning.
 
 ## [0.1.0-alpha.0] - 2026-05-13
 
@@ -44,5 +54,6 @@ This project follows Semantic Versioning.
 
 ### Fixed
 
-[Unreleased]: https://github.com/tjablo/pivot-data-grid/compare/v0.1.0-alpha.0...HEAD
+[Unreleased]: https://github.com/tjablo/pivot-data-grid/compare/v0.1.0-alpha.1...HEAD
+[0.1.0-alpha.1]: https://github.com/tjablo/pivot-data-grid/compare/v0.1.0-alpha.0...v0.1.0-alpha.1
 [0.1.0-alpha.0]: https://github.com/tjablo/pivot-data-grid/releases/tag/v0.1.0-alpha.0
