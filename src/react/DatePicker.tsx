@@ -1,6 +1,6 @@
 import * as Popover from '@radix-ui/react-popover';
 import { CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 
 import { usePortalContainer } from './portalContext';
 
@@ -84,13 +84,14 @@ export function DatePicker({ ariaLabel, value, placeholder, onValueChange, label
   const selectedDate = parseDateValue(value);
   const selectedTimestamp = selectedDate?.getTime();
   const [open, setOpen] = useState(false);
-  const [visibleMonth, setVisibleMonth] = useState(() => startOfMonth(selectedDate ?? new Date()));
+  const selectedMonth = useMemo(
+    () => startOfMonth(selectedTimestamp == null ? new Date() : new Date(selectedTimestamp)),
+    [selectedTimestamp],
+  );
+  const [visibleMonthOverride, setVisibleMonthOverride] = useState<Date | null>(null);
+  const visibleMonth = visibleMonthOverride ?? selectedMonth;
   const portalContainer = usePortalContainer();
   const locale = getLocale();
-
-  useEffect(() => {
-    if (selectedTimestamp != null) setVisibleMonth(startOfMonth(new Date(selectedTimestamp)));
-  }, [selectedTimestamp]);
 
   const monthLabel = useMemo(
     () => new Intl.DateTimeFormat(locale, { month: 'long', year: 'numeric' }).format(visibleMonth),
@@ -117,9 +118,19 @@ export function DatePicker({ ariaLabel, value, placeholder, onValueChange, label
         placeholder={placeholder}
         type="text"
         value={value}
-        onChange={(event) => onValueChange(event.target.value)}
+        onChange={(event) => {
+          setVisibleMonthOverride(null);
+          onValueChange(event.target.value);
+        }}
       />
-      <Popover.Root modal={false} open={open} onOpenChange={setOpen}>
+      <Popover.Root
+        modal={false}
+        open={open}
+        onOpenChange={(nextOpen) => {
+          if (nextOpen) setVisibleMonthOverride(null);
+          setOpen(nextOpen);
+        }}
+      >
         <Popover.Trigger asChild>
           <button className="pg-date-picker-trigger" type="button" aria-label={labels.openCalendar}>
             <CalendarDays className="pg-action-icon" aria-hidden />
@@ -132,7 +143,7 @@ export function DatePicker({ ariaLabel, value, placeholder, onValueChange, label
                 className="pg-date-picker-nav"
                 type="button"
                 aria-label={labels.previousMonth}
-                onClick={() => setVisibleMonth((current) => addMonths(current, -1))}
+                onClick={() => setVisibleMonthOverride(addMonths(visibleMonth, -1))}
               >
                 <ChevronLeft className="pg-action-icon" aria-hidden />
               </button>
@@ -141,7 +152,7 @@ export function DatePicker({ ariaLabel, value, placeholder, onValueChange, label
                 className="pg-date-picker-nav"
                 type="button"
                 aria-label={labels.nextMonth}
-                onClick={() => setVisibleMonth((current) => addMonths(current, 1))}
+                onClick={() => setVisibleMonthOverride(addMonths(visibleMonth, 1))}
               >
                 <ChevronRight className="pg-action-icon" aria-hidden />
               </button>
@@ -170,6 +181,7 @@ export function DatePicker({ ariaLabel, value, placeholder, onValueChange, label
                     data-today={isSameDate(today, date) || undefined}
                     onClick={() => {
                       onValueChange(dateValue);
+                      setVisibleMonthOverride(null);
                       setOpen(false);
                     }}
                   >

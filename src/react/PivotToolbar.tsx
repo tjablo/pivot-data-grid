@@ -1,33 +1,15 @@
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import * as Select from '@radix-ui/react-select';
 import { Check, ChevronDown, ListFilter, Plus, Trash2, X } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
 
 import type { PivotFieldConfig, PivotModel, SourceFilter } from '../core/types';
 import { DatePicker } from './DatePicker';
 import type { PivotTableLabels } from './labels';
+import { pivotFilterService } from './PivotFilterService';
 import { usePortalContainer } from './portalContext';
+import { useDraftFilters } from './useDraftFilters';
 
 const NONE_VALUE = '__pg_none__';
-
-const OPERATORS: SourceFilter['operator'][] = [
-  'contains',
-  'equals',
-  'notEquals',
-  'startsWith',
-  'endsWith',
-  'greaterThan',
-  'lessThan',
-  'between',
-  'after',
-  'before',
-  'isEmpty',
-  'isNotEmpty',
-];
-
-const DATE_OPERATORS: SourceFilter['operator'][] = ['between', 'after', 'before', 'equals', 'isEmpty', 'isNotEmpty'];
-const NUMBER_OPERATORS: SourceFilter['operator'][] = ['between', 'greaterThan', 'lessThan', 'equals', 'notEquals', 'isEmpty', 'isNotEmpty'];
-const BOOLEAN_OPERATORS: SourceFilter['operator'][] = ['equals', 'notEquals', 'isEmpty', 'isNotEmpty'];
 
 interface PivotToolbarProps {
   fields: PivotFieldConfig[];
@@ -45,52 +27,6 @@ function canUseAsDimension(field: PivotFieldConfig): boolean {
 
 function canUseAsValue(field: PivotFieldConfig): boolean {
   return field.role === 'value' || field.role === 'all' || field.role == null;
-}
-
-function updateFilter(filters: SourceFilter[], id: string, patch: Partial<SourceFilter>): SourceFilter[] {
-  return filters.map((filter) => (filter.id === id ? { ...filter, ...patch } : filter));
-}
-
-function areFiltersEqual(left: SourceFilter[], right: SourceFilter[]): boolean {
-  if (left.length !== right.length) return false;
-  return left.every((filter, index) => {
-    const candidate = right[index];
-    return (
-      candidate &&
-      filter.id === candidate.id &&
-      filter.field === candidate.field &&
-      filter.operator === candidate.operator &&
-      filter.value === candidate.value &&
-      filter.valueTo === candidate.valueTo
-    );
-  });
-}
-
-function usesValueInput(operator: SourceFilter['operator']): boolean {
-  return operator !== 'isEmpty' && operator !== 'isNotEmpty';
-}
-
-function usesSecondValueInput(operator: SourceFilter['operator']): boolean {
-  return operator === 'between';
-}
-
-function getDefaultOperator(field?: PivotFieldConfig): SourceFilter['operator'] {
-  if (field?.type === 'date') return 'between';
-  if (field?.type === 'number') return 'between';
-  if (field?.type === 'boolean') return 'equals';
-  return 'contains';
-}
-
-function getOperatorsForField(field?: PivotFieldConfig): SourceFilter['operator'][] {
-  if (field?.type === 'date') return DATE_OPERATORS;
-  if (field?.type === 'number') return NUMBER_OPERATORS;
-  if (field?.type === 'boolean') return BOOLEAN_OPERATORS;
-  return OPERATORS;
-}
-
-function getFilterInputType(field?: PivotFieldConfig): 'number' | 'text' {
-  if (field?.type === 'number') return 'number';
-  return 'text';
 }
 
 interface SelectControlItem {
@@ -171,34 +107,11 @@ export function PivotToolbar({
   const valueFields = fields.filter(canUseAsValue);
   const filterFields = fields;
   const valueConfig = model.values[0] ?? { field: valueFields[0]?.field ?? '', aggFunc: 'sum' as const };
-  const [filterMenuOpen, setFilterMenuOpen] = useState(false);
-  const [draftFilters, setDraftFilters] = useState(filters);
-  const activeFilters = deferFilterUpdates ? draftFilters : filters;
-
-  useEffect(() => {
-    if (!deferFilterUpdates || !filterMenuOpen) setDraftFilters(filters);
-  }, [deferFilterUpdates, filterMenuOpen, filters]);
-
-  const commitDraftFilters = useCallback(() => {
-    if (!deferFilterUpdates || areFiltersEqual(filters, draftFilters)) return;
-    onFiltersChange(draftFilters);
-  }, [deferFilterUpdates, draftFilters, filters, onFiltersChange]);
-
-  const setFilterMenuState = (open: boolean) => {
-    if (open) {
-      setDraftFilters(filters);
-      setFilterMenuOpen(true);
-      return;
-    }
-
-    commitDraftFilters();
-    setFilterMenuOpen(false);
-  };
-
-  const updateFilters = (nextFilters: SourceFilter[]) => {
-    if (deferFilterUpdates) setDraftFilters(nextFilters);
-    else onFiltersChange(nextFilters);
-  };
+  const { activeFilters, filterMenuOpen, setFilterMenuOpen, updateFilters } = useDraftFilters({
+    deferUpdates: deferFilterUpdates,
+    filters,
+    onFiltersChange,
+  });
 
   const setRow = (field: string) => onModelChange({ ...model, rows: field ? [field] : [] });
   const setColumn = (field: string) => onModelChange({ ...model, columns: field && field !== NONE_VALUE ? [field] : [] });
@@ -210,7 +123,13 @@ export function PivotToolbar({
     if (!firstField) return;
     updateFilters([
       ...activeFilters,
-      { id: `filter-${Date.now()}`, field: firstField.field, operator: getDefaultOperator(firstField), value: '', valueTo: '' },
+      {
+        id: `filter-${Date.now()}`,
+        field: firstField.field,
+        operator: pivotFilterService.getDefaultOperator(firstField),
+        value: '',
+        valueTo: '',
+      },
     ]);
   };
 
@@ -251,7 +170,7 @@ export function PivotToolbar({
 
       <div className="pg-toolbar-spacer" />
 
-      <DropdownMenu.Root modal={false} open={filterMenuOpen} onOpenChange={setFilterMenuState}>
+      <DropdownMenu.Root modal={false} open={filterMenuOpen} onOpenChange={setFilterMenuOpen}>
         <DropdownMenu.Trigger asChild>
           <button className="pg-icon-button pg-filter-menu-trigger" type="button" aria-label={labels.sourceFilters}>
             <ListFilter className="pg-action-icon" aria-hidden />
@@ -276,10 +195,12 @@ export function PivotToolbar({
               {activeFilters.length > 0 ? (
                 activeFilters.map((filter) => {
                   const filterField = filterFields.find((field) => field.field === filter.field);
-                  const operators = getOperatorsForField(filterField);
-                  const inputType = getFilterInputType(filterField);
-                  const operator = operators.includes(filter.operator) ? filter.operator : getDefaultOperator(filterField);
-                  const isRangeFilter = usesSecondValueInput(operator);
+                  const operators = pivotFilterService.getOperatorsForField(filterField);
+                  const inputType = pivotFilterService.getInputType(filterField);
+                  const operator = operators.includes(filter.operator)
+                    ? filter.operator
+                    : pivotFilterService.getDefaultOperator(filterField);
+                  const isRangeFilter = pivotFilterService.usesSecondValueInput(operator);
                   const isDateFilter = filterField?.type === 'date';
                   const datePickerLabels = {
                     calendar: labels.datePickerCalendar,
@@ -311,9 +232,9 @@ export function PivotToolbar({
                           onValueChange={(value) => {
                             const nextField = filterFields.find((field) => field.field === value);
                             updateFilters(
-                              updateFilter(activeFilters, filter.id, {
+                              pivotFilterService.update(activeFilters, filter.id, {
                                 field: value,
-                                operator: getDefaultOperator(nextField),
+                                operator: pivotFilterService.getDefaultOperator(nextField),
                                 value: '',
                                 valueTo: '',
                               }),
@@ -333,12 +254,14 @@ export function PivotToolbar({
                           }))}
                           triggerClassName="pg-filter-select"
                           onValueChange={(value) =>
-                            updateFilters(updateFilter(activeFilters, filter.id, { operator: value as SourceFilter['operator'] }))
+                            updateFilters(
+                              pivotFilterService.update(activeFilters, filter.id, { operator: value as SourceFilter['operator'] }),
+                            )
                           }
                         />
                       </div>
 
-                      {usesValueInput(operator) ? (
+                      {pivotFilterService.usesValueInput(operator) ? (
                         <div className="pg-filter-field pg-filter-value-field">
                           <span>{isRangeFilter ? labels.filterValueFrom : labels.filterValue}</span>
                           {isDateFilter ? (
@@ -347,7 +270,7 @@ export function PivotToolbar({
                               value={filter.value ?? ''}
                               placeholder={isRangeFilter ? labels.filterValueFrom : labels.filterValue}
                               labels={datePickerLabels}
-                              onValueChange={(value) => updateFilters(updateFilter(activeFilters, filter.id, { value }))}
+                              onValueChange={(value) => updateFilters(pivotFilterService.update(activeFilters, filter.id, { value }))}
                             />
                           ) : (
                             <input
@@ -355,7 +278,9 @@ export function PivotToolbar({
                               type={inputType}
                               value={filter.value ?? ''}
                               placeholder={isRangeFilter ? labels.filterValueFrom : labels.filterValue}
-                              onChange={(event) => updateFilters(updateFilter(activeFilters, filter.id, { value: event.target.value }))}
+                              onChange={(event) =>
+                                updateFilters(pivotFilterService.update(activeFilters, filter.id, { value: event.target.value }))
+                              }
                             />
                           )}
                         </div>
@@ -365,7 +290,7 @@ export function PivotToolbar({
                         </div>
                       )}
 
-                      {usesSecondValueInput(operator) ? (
+                      {pivotFilterService.usesSecondValueInput(operator) ? (
                         <div className="pg-filter-field pg-filter-value-field">
                           <span>{labels.filterValueTo}</span>
                           {isDateFilter ? (
@@ -374,7 +299,9 @@ export function PivotToolbar({
                               value={filter.valueTo ?? ''}
                               placeholder={labels.filterValueTo}
                               labels={datePickerLabels}
-                              onValueChange={(value) => updateFilters(updateFilter(activeFilters, filter.id, { valueTo: value }))}
+                              onValueChange={(value) =>
+                                updateFilters(pivotFilterService.update(activeFilters, filter.id, { valueTo: value }))
+                              }
                             />
                           ) : (
                             <input
@@ -382,7 +309,9 @@ export function PivotToolbar({
                               type={inputType}
                               value={filter.valueTo ?? ''}
                               placeholder={labels.filterValueTo}
-                              onChange={(event) => updateFilters(updateFilter(activeFilters, filter.id, { valueTo: event.target.value }))}
+                              onChange={(event) =>
+                                updateFilters(pivotFilterService.update(activeFilters, filter.id, { valueTo: event.target.value }))
+                              }
                             />
                           )}
                         </div>

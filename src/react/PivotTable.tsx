@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { autoDetectFields, buildDefaultModel } from '../core/fields';
 import { getPivotTotalColumnId, getPivotValueColumnId } from '../core/pivot';
 import type { PivotFieldConfig, PivotModel, PivotResult, PivotRow, RowData } from '../core/types';
@@ -10,6 +10,7 @@ import type { PivotTableProps } from './PivotTable.types';
 import { PivotToolbar } from './PivotToolbar';
 import { PortalContainerContext } from './portalContext';
 import { useControllableState } from './useControllableState';
+import { useManagedPageState } from './useManagedPageState';
 import { useManagedPivotPage } from './useManagedPivotPage';
 import { usePivotData } from './usePivotData';
 import { usePivotDrillDown } from './usePivotDrillDown';
@@ -182,19 +183,13 @@ export function PivotTable(props: PivotTableProps) {
   const drillDownGetPage = drillDownOptions && 'getPage' in drillDownOptions ? drillDownOptions.getPage : undefined;
   const drillDownRows = drillDownOptions && 'rows' in drillDownOptions ? drillDownOptions.rows : undefined;
   const drillDownLoading = drillDownOptions && 'loading' in drillDownOptions ? drillDownOptions.loading : undefined;
-  const [managedPivotPage, setManagedPivotPage] = useState<PaginationState>({
-    pageIndex: 0,
-    pageSize: pivotPagination.defaultPageSize,
-  });
-  const [managedPivotSort, setManagedPivotSort] = useState<SortState | null>(null);
-
-  useEffect(() => {
-    setManagedPivotPage((current) =>
-      current.pageSize === pivotPagination.defaultPageSize
-        ? current
-        : { pageIndex: current.pageIndex, pageSize: pivotPagination.defaultPageSize },
-    );
-  }, [pivotPagination.defaultPageSize]);
+  const {
+    page: managedPivotPage,
+    sort: managedPivotSort,
+    setPage: setManagedPivotPage,
+    setSort: setManagedPivotSort,
+    reset: resetManagedPivotState,
+  } = useManagedPageState(pivotPagination.defaultPageSize);
 
   const labels = useMemo(() => resolvePivotTableLabels(labelOverrides), [labelOverrides]);
   const resolvedEntityName = entityName ?? labels.entityName;
@@ -211,9 +206,8 @@ export function PivotTable(props: PivotTableProps) {
 
   const resetManagedPivotPage = useCallback(() => {
     if (!hasManagedPivotLoader) return;
-    setManagedPivotPage((current) => ({ pageIndex: 0, pageSize: current.pageSize }));
-    setManagedPivotSort(null);
-  }, [hasManagedPivotLoader]);
+    resetManagedPivotState();
+  }, [hasManagedPivotLoader, resetManagedPivotState]);
 
   const handleModelChange = useCallback(
     (nextModel: PivotModel) => {
@@ -231,14 +225,9 @@ export function PivotTable(props: PivotTableProps) {
     [resetManagedPivotPage, setSourceFilters],
   );
 
-  const handleManagedPivotPageChange = useCallback((state: PaginationState) => {
-    setManagedPivotPage(state);
-  }, []);
+  const handleManagedPivotPageChange = useCallback((state: PaginationState) => setManagedPivotPage(state), [setManagedPivotPage]);
 
-  const handleManagedPivotSortChange = useCallback((sort: SortState | null) => {
-    setManagedPivotSort(sort);
-    setManagedPivotPage((current) => ({ pageIndex: 0, pageSize: current.pageSize }));
-  }, []);
+  const handleManagedPivotSortChange = useCallback((sort: SortState | null) => setManagedPivotSort(sort), [setManagedPivotSort]);
 
   const managedPivot = useManagedPivotPage({
     enabled: hasManagedPivotLoader,

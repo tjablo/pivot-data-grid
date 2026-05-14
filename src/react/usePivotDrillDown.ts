@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createDrillDownRequestFromCell, getDrillDownRows } from '../core/drilldown';
 import type { DrillDownRequest, PivotModel, PivotResult, PivotRow, RowData, SourceFilter } from '../core/types';
-import type { DataGridColumn, PaginationState, SortState } from './DataGrid.types';
+import type { DataGridColumn } from './DataGrid.types';
+import { type DrillDownSession, drillDownSessionService } from './drillDownSessionService';
 import type { PivotTableDrillDownGetPage } from './PivotTable.types';
+import { useManagedPageState } from './useManagedPageState';
 
 interface UsePivotDrillDownOptions {
   clientMode: boolean;
@@ -33,31 +35,22 @@ export function usePivotDrillDown({
   controlledRows,
   controlledLoading,
 }: UsePivotDrillDownOptions) {
-  const [activeRequest, setActiveRequest] = useState<DrillDownRequest | null>(null);
+  const scopeKey = useMemo(() => drillDownSessionService.getScopeKey(model, sourceFilters), [model, sourceFilters]);
+  const [session, setSession] = useState<DrillDownSession | null>(null);
+  const activeSession = drillDownSessionService.getActive(session, scopeKey);
+  const activeRequest = activeSession?.request ?? null;
   const [internalRows, setInternalRows] = useState<RowData[]>([]);
   const [internalLoading, setInternalLoading] = useState(false);
-  const [managedPage, setManagedPage] = useState<PaginationState>({ pageIndex: 0, pageSize: defaultPageSize });
-  const [managedSort, setManagedSort] = useState<SortState | null>(null);
   const [managedTotalRows, setManagedTotalRows] = useState(0);
+  const {
+    page: managedPage,
+    sort: managedSort,
+    setPage: setManagedPage,
+    setSort: setManagedSort,
+    reset: resetManagedPage,
+  } = useManagedPageState(defaultPageSize);
   const requestVersionRef = useRef(0);
   const hasManagedLoader = Boolean(getPage);
-
-  useEffect(() => {
-    setManagedPage((current) =>
-      current.pageSize === defaultPageSize ? current : { pageIndex: current.pageIndex, pageSize: defaultPageSize },
-    );
-  }, [defaultPageSize]);
-
-  // biome-ignore lint/correctness/useExhaustiveDependencies: reset drilldown whenever the pivot model or filters change.
-  useEffect(() => {
-    requestVersionRef.current += 1;
-    setActiveRequest(null);
-    setInternalRows([]);
-    setInternalLoading(false);
-    setManagedPage((current) => ({ pageIndex: 0, pageSize: current.pageSize }));
-    setManagedSort(null);
-    setManagedTotalRows(0);
-  }, [model, sourceFilters]);
 
   useEffect(() => {
     if (!getPage || clientMode || !activeRequest) return undefined;
@@ -100,58 +93,48 @@ export function usePivotDrillDown({
 
       requestVersionRef.current += 1;
       onOpen?.(request);
-      setActiveRequest(request);
+      setSession(drillDownSessionService.create(scopeKey, request));
 
       if (clientMode) {
         setInternalRows(getDrillDownRows(filteredData, request));
+        setInternalLoading(false);
         return;
       }
 
       if (getPage) {
         setInternalRows([]);
         setManagedTotalRows(0);
-        setManagedSort(null);
-        setManagedPage((current) => ({ pageIndex: 0, pageSize: current.pageSize }));
+        resetManagedPage();
         return;
       }
     },
-    [clientMode, filteredData, getPage, model, onOpen, result],
+    [clientMode, filteredData, getPage, model, onOpen, resetManagedPage, result, scopeKey],
   );
 
   const close = useCallback(() => {
     requestVersionRef.current += 1;
-    setActiveRequest(null);
+    setSession(null);
     setInternalRows([]);
     setInternalLoading(false);
-    setManagedPage((current) => ({ pageIndex: 0, pageSize: current.pageSize }));
-    setManagedSort(null);
+    resetManagedPage();
     setManagedTotalRows(0);
-  }, []);
-
-  const changeManagedPage = useCallback((state: PaginationState) => {
-    setManagedPage(state);
-  }, []);
-
-  const changeManagedSort = useCallback((sort: SortState | null) => {
-    setManagedSort(sort);
-    setManagedPage((current) => ({ pageIndex: 0, pageSize: current.pageSize }));
-  }, []);
+  }, [resetManagedPage]);
 
   return {
     activeRequest,
-    rows: controlledRows ?? internalRows,
-    loading: controlledLoading ?? internalLoading,
+    rows: activeRequest ? (controlledRows ?? internalRows) : [],
+    loading: activeRequest ? (controlledLoading ?? internalLoading) : false,
     managedPagination: hasManagedLoader
       ? {
           state: managedPage,
           totalRows: managedTotalRows,
-          onChange: changeManagedPage,
+          onChange: setManagedPage,
         }
       : null,
     sort: hasManagedLoader
       ? {
           state: managedSort,
-          onChange: changeManagedSort,
+          onChange: setManagedSort,
         }
       : null,
     open,

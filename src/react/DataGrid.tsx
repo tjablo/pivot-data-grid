@@ -6,193 +6,20 @@ import { ArrowDown, ArrowUp, Check, ChevronDown, ChevronLeft, ChevronRight, Copy
 import { type KeyboardEvent, type MouseEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { RowData } from '../core/types';
-import type { DataGridCellTone, DataGridColumn, DataGridProps, PaginationState, SortState } from './DataGrid.types';
+import type { DataGridColumn, DataGridProps, PaginationState, SortState } from './DataGrid.types';
+import { dataGridBrowserService } from './DataGridBrowserService';
+import { dataGridModelService } from './DataGridModelService';
 import { resolveDataGridLabels } from './labels';
 import { usePortalContainer } from './portalContext';
+import { useElementWidth } from './useElementWidth';
+import { useIsTruncated } from './useIsTruncated';
+import { useTimedCellFeedback } from './useTimedCellFeedback';
 
-const DEFAULT_PAGE_SIZE_OPTIONS = [25, 50, 100];
 const COPY_FEEDBACK_DURATION_MS = 1200;
-
-function getColumnWidth<T extends RowData>(column: DataGridColumn<T>): number {
-  return column.width ?? column.minWidth ?? 160;
-}
-
-function getCellValue<T extends RowData>(row: T, column: DataGridColumn<T>): unknown {
-  if (typeof column.accessor === 'function') return column.accessor(row);
-  if (typeof column.accessor === 'string') return row[column.accessor];
-  return row[column.id];
-}
-
-function compareValues(left: unknown, right: unknown): number {
-  if (left == null && right == null) return 0;
-  if (left == null) return -1;
-  if (right == null) return 1;
-
-  const leftNumber = typeof left === 'number' ? left : Number(left);
-  const rightNumber = typeof right === 'number' ? right : Number(right);
-  if (Number.isFinite(leftNumber) && Number.isFinite(rightNumber)) return leftNumber - rightNumber;
-
-  return String(left).localeCompare(String(right), undefined, { numeric: true, sensitivity: 'base' });
-}
-
-function toToneNumber(value: unknown): number | null {
-  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
-  if (typeof value !== 'string') return null;
-
-  const trimmedValue = value.trim();
-  if (!/^-?\d+(?:\.\d+)?$/.test(trimmedValue)) return null;
-
-  const numericValue = Number(trimmedValue);
-  return Number.isFinite(numericValue) ? numericValue : null;
-}
-
-function getSignedValueTone(value: unknown): DataGridCellTone | null {
-  const numericValue = toToneNumber(value);
-  if (numericValue == null) return null;
-  if (numericValue > 0) return 'positive';
-  if (numericValue < 0) return 'negative';
-  return 'neutral';
-}
-
-function resolveCellTone<T extends RowData>(row: T, column: DataGridColumn<T>, value: unknown): DataGridCellTone | null {
-  const valueTone = column.valueTone;
-  if (!valueTone || valueTone === 'none') return null;
-  if (valueTone === 'signed') return getSignedValueTone(value);
-  return valueTone({ value, row, column }) ?? null;
-}
-
-function fallbackVirtualItems(count: number, size: number, limit = count) {
-  return Array.from({ length: Math.min(count, limit) }, (_, index) => ({
-    key: index,
-    index,
-    start: index * size,
-    end: (index + 1) * size,
-    size,
-    lane: 0,
-  }));
-}
-
-function fallbackHorizontalItems(widths: number[]) {
-  let start = 0;
-  return widths.map((size, index) => {
-    const item = {
-      key: index,
-      index,
-      start,
-      end: start + size,
-      size,
-      lane: 0,
-    };
-    start += size;
-    return item;
-  });
-}
-
-function normalizeFrozenColumnCount(count: number, columnCount: number): number {
-  if (!Number.isFinite(count)) return 0;
-  return Math.min(Math.max(0, Math.floor(count)), columnCount);
-}
-
-function getColumnStarts(widths: number[]): number[] {
-  let start = 0;
-  return widths.map((width) => {
-    const current = start;
-    start += width;
-    return current;
-  });
-}
-
-function normalizePageSizeOptions(options: number[] | undefined): number[] {
-  const normalized = (options?.length ? options : DEFAULT_PAGE_SIZE_OPTIONS)
-    .map((option) => Math.floor(option))
-    .filter((option) => Number.isFinite(option) && option > 0);
-  return Array.from(new Set(normalized)).sort((left, right) => left - right);
-}
-
-function normalizePageSize(pageSize: number | undefined, options: number[]): number {
-  const fallback = options[0] ?? DEFAULT_PAGE_SIZE_OPTIONS[0];
-  if (!Number.isFinite(pageSize)) return fallback;
-  const normalized = Math.floor(Number(pageSize));
-  return normalized > 0 ? normalized : fallback;
-}
-
-function getPageCount(totalRows: number, pageSize: number): number {
-  return Math.max(1, Math.ceil(Math.max(0, totalRows) / pageSize));
-}
-
-function normalizePageIndex(pageIndex: number | undefined, pageCount: number): number {
-  if (!Number.isFinite(pageIndex)) return 0;
-  return Math.min(Math.max(0, Math.floor(Number(pageIndex))), pageCount - 1);
-}
-
-function hasActiveTextSelection(): boolean {
-  if (typeof window === 'undefined' || typeof window.getSelection !== 'function') return false;
-  return Boolean(window.getSelection()?.toString());
-}
-
-async function copyTextToClipboard(text: string): Promise<void> {
-  if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-    try {
-      await navigator.clipboard.writeText(text);
-      return;
-    } catch {
-      // Fall through to the textarea fallback for restricted clipboard contexts.
-    }
-  }
-
-  if (typeof document === 'undefined') return;
-
-  const textarea = document.createElement('textarea');
-  textarea.value = text;
-  textarea.setAttribute('readonly', '');
-  textarea.style.position = 'fixed';
-  textarea.style.left = '-9999px';
-  document.body.appendChild(textarea);
-  textarea.select();
-  document.execCommand('copy');
-  document.body.removeChild(textarea);
-}
-
-function getTooltipText(value: unknown, renderedValue: ReactNode): string {
-  if (typeof renderedValue === 'string' || typeof renderedValue === 'number') return String(renderedValue);
-  if (Array.isArray(renderedValue)) {
-    return renderedValue
-      .map((item) => (typeof item === 'string' || typeof item === 'number' ? String(item) : ''))
-      .filter(Boolean)
-      .join(' ');
-  }
-  if (value == null) return '';
-  return String(value);
-}
 
 function CellContent({ children, tooltip }: { children: ReactNode; tooltip: string }) {
   const contentRef = useRef<HTMLDivElement | null>(null);
-  const [isTruncated, setIsTruncated] = useState(false);
-
-  useEffect(() => {
-    const element = contentRef.current;
-    if (!element || !tooltip) {
-      setIsTruncated(false);
-      return undefined;
-    }
-
-    const updateTruncation = () => {
-      const nextIsTruncated = element.scrollWidth > element.clientWidth + 1;
-      setIsTruncated((current) => (current === nextIsTruncated ? current : nextIsTruncated));
-    };
-
-    updateTruncation();
-
-    if (typeof ResizeObserver === 'undefined') {
-      if (typeof window === 'undefined') return undefined;
-      window.addEventListener('resize', updateTruncation);
-      return () => window.removeEventListener('resize', updateTruncation);
-    }
-
-    const observer = new ResizeObserver(updateTruncation);
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, [tooltip]);
+  const isTruncated = useIsTruncated(contentRef, tooltip);
 
   return (
     <div
@@ -244,15 +71,14 @@ export function DataGrid<T extends RowData>({
     setLocalPortalContainer(node);
   }, []);
   const labels = useMemo(() => resolveDataGridLabels(labelOverrides), [labelOverrides]);
-  const normalizedPageSizeOptions = useMemo(() => normalizePageSizeOptions(pageSizeOptions), [pageSizeOptions]);
-  const [viewportWidth, setViewportWidth] = useState(0);
+  const normalizedPageSizeOptions = useMemo(() => dataGridModelService.normalizePageSizeOptions(pageSizeOptions), [pageSizeOptions]);
+  const viewportWidth = useElementWidth(scrollRef);
   const [hiddenColumnIds, setHiddenColumnIds] = useState(() => new Set(initialHiddenColumnIds));
   const [internalSort, setInternalSort] = useState<SortState | null>(null);
-  const [copiedCellKey, setCopiedCellKey] = useState<string | null>(null);
-  const copyFeedbackTimeoutRef = useRef<number | null>(null);
+  const { activeKey: copiedCellKey, showFeedback: showCopyFeedback } = useTimedCellFeedback(COPY_FEEDBACK_DURATION_MS);
   const [internalPagination, setInternalPagination] = useState<PaginationState>(() => ({
     pageIndex: Math.max(0, Math.floor(defaultPaginationState?.pageIndex ?? 0)),
-    pageSize: normalizePageSize(defaultPaginationState?.pageSize, normalizedPageSizeOptions),
+    pageSize: dataGridModelService.normalizePageSize(defaultPaginationState?.pageSize, normalizedPageSizeOptions),
   }));
   const activeSort = sortState === undefined ? internalSort : sortState;
   const isServerSort = sortMode === 'server';
@@ -266,16 +92,21 @@ export function DataGrid<T extends RowData>({
 
     return [...rows].sort((left, right) => {
       const direction = activeSort.direction === 'asc' ? 1 : -1;
-      return compareValues(getCellValue(left, sortColumn), getCellValue(right, sortColumn)) * direction;
+      return (
+        dataGridModelService.compareValues(
+          dataGridModelService.getCellValue(left, sortColumn),
+          dataGridModelService.getCellValue(right, sortColumn),
+        ) * direction
+      );
     });
   }, [activeSort, columns, isServerSort, rows]);
 
   const activePagination = paginationState ?? internalPagination;
   const isServerPagination = paginationMode === 'server';
   const rowCountForPagination = Math.max(0, isServerPagination ? (totalRows ?? sortedRows.length) : sortedRows.length);
-  const activePageSize = normalizePageSize(activePagination.pageSize, normalizedPageSizeOptions);
-  const pageCount = getPageCount(rowCountForPagination, activePageSize);
-  const activePageIndex = normalizePageIndex(activePagination.pageIndex, pageCount);
+  const activePageSize = dataGridModelService.normalizePageSize(activePagination.pageSize, normalizedPageSizeOptions);
+  const pageCount = dataGridModelService.getPageCount(rowCountForPagination, activePageSize);
+  const activePageIndex = dataGridModelService.normalizePageIndex(activePagination.pageIndex, pageCount);
   const pageStart = activePageIndex * activePageSize;
   const visibleRows = useMemo(
     () => (pagination && !isServerPagination ? sortedRows.slice(pageStart, pageStart + activePageSize) : sortedRows),
@@ -284,10 +115,10 @@ export function DataGrid<T extends RowData>({
   const rowIndexOffset = pagination && !isServerPagination ? pageStart : 0;
 
   const setPaginationState = (nextState: PaginationState) => {
-    const nextPageSize = normalizePageSize(nextState.pageSize, normalizedPageSizeOptions);
-    const nextPageCount = getPageCount(rowCountForPagination, nextPageSize);
+    const nextPageSize = dataGridModelService.normalizePageSize(nextState.pageSize, normalizedPageSizeOptions);
+    const nextPageCount = dataGridModelService.getPageCount(rowCountForPagination, nextPageSize);
     const normalizedState = {
-      pageIndex: normalizePageIndex(nextState.pageIndex, nextPageCount),
+      pageIndex: dataGridModelService.normalizePageIndex(nextState.pageIndex, nextPageCount),
       pageSize: nextPageSize,
     };
 
@@ -295,7 +126,7 @@ export function DataGrid<T extends RowData>({
     onPaginationChange?.(normalizedState);
   };
 
-  const baseColumnWidths = useMemo(() => visibleColumns.map(getColumnWidth), [visibleColumns]);
+  const baseColumnWidths = useMemo(() => visibleColumns.map((column) => dataGridModelService.getColumnWidth(column)), [visibleColumns]);
   const baseTotalWidth = baseColumnWidths.reduce((total, width) => total + width, 0);
   const columnWidths = useMemo(() => {
     if (!visibleColumns.length || viewportWidth <= baseTotalWidth) return baseColumnWidths;
@@ -313,19 +144,6 @@ export function DataGrid<T extends RowData>({
     viewportWidth,
   );
 
-  useEffect(() => {
-    const element = scrollRef.current;
-    if (!element || typeof ResizeObserver === 'undefined') return undefined;
-
-    const observer = new ResizeObserver(([entry]) => {
-      setViewportWidth(entry.contentRect.width);
-    });
-    observer.observe(element);
-    setViewportWidth(element.clientWidth);
-
-    return () => observer.disconnect();
-  }, []);
-
   const rowVirtualizer = useVirtualizer({
     count: visibleRows.length,
     getScrollElement: () => scrollRef.current,
@@ -341,35 +159,30 @@ export function DataGrid<T extends RowData>({
     overscan: 2,
   });
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: remeasure when computed column widths change.
   useEffect(() => {
-    columnVirtualizer.measure();
+    const widthKey = columnWidths.join('|');
+    if (widthKey || columnWidths.length === 0) columnVirtualizer.measure();
   }, [columnVirtualizer, columnWidths]);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: reset scroll position when the active page changes.
   useEffect(() => {
-    if (pagination) rowVirtualizer.scrollToIndex(0);
+    const pageKey = `${activePageIndex}:${activePageSize}`;
+    if (pagination && pageKey) rowVirtualizer.scrollToIndex(0);
   }, [activePageIndex, activePageSize, pagination, rowVirtualizer]);
-
-  useEffect(
-    () => () => {
-      if (copyFeedbackTimeoutRef.current) window.clearTimeout(copyFeedbackTimeoutRef.current);
-    },
-    [],
-  );
 
   const measuredRows = rowVirtualizer.getVirtualItems();
   const measuredColumns = columnVirtualizer.getVirtualItems();
-  const virtualRows = measuredRows.length ? measuredRows : fallbackVirtualItems(visibleRows.length, rowHeight, overscan);
-  const virtualColumns = measuredColumns.length ? measuredColumns : fallbackHorizontalItems(columnWidths);
-  const columnStarts = useMemo(() => getColumnStarts(columnWidths), [columnWidths]);
-  const normalizedFrozenColumnCount = normalizeFrozenColumnCount(frozenColumnCount, visibleColumns.length);
+  const virtualRows = measuredRows.length
+    ? measuredRows
+    : dataGridModelService.fallbackVirtualItems(visibleRows.length, rowHeight, overscan);
+  const virtualColumns = measuredColumns.length ? measuredColumns : dataGridModelService.fallbackHorizontalItems(columnWidths);
+  const columnStarts = useMemo(() => dataGridModelService.getColumnStarts(columnWidths), [columnWidths]);
+  const normalizedFrozenColumnCount = dataGridModelService.normalizeFrozenColumnCount(frozenColumnCount, visibleColumns.length);
   const renderedColumns = useMemo(() => {
-    const frozenColumns = fallbackHorizontalItems(columnWidths.slice(0, normalizedFrozenColumnCount));
+    const frozenColumns = dataGridModelService.fallbackHorizontalItems(columnWidths.slice(0, normalizedFrozenColumnCount));
     const scrollColumns = virtualColumns.filter((column) => column.index >= normalizedFrozenColumnCount);
     return [...frozenColumns, ...scrollColumns];
   }, [columnWidths, normalizedFrozenColumnCount, virtualColumns]);
-  const skeletonRows = fallbackVirtualItems(skeletonRowCount, rowHeight, skeletonRowCount);
+  const skeletonRows = dataGridModelService.fallbackVirtualItems(skeletonRowCount, rowHeight, skeletonRowCount);
 
   const setSort = (column: DataGridColumn<T>) => {
     if (!column.sortable) return;
@@ -400,7 +213,7 @@ export function DataGrid<T extends RowData>({
 
   const renderCell = (row: T, column: DataGridColumn<T>) => {
     if (column.cell) return column.cell(row);
-    const value = getCellValue(row, column);
+    const value = dataGridModelService.getCellValue(row, column);
     return column.format ? column.format(value, row) : String(value ?? '');
   };
 
@@ -410,7 +223,7 @@ export function DataGrid<T extends RowData>({
   };
 
   const handleCellInteraction = (row: T, rowIndex: number, column: DataGridColumn<T>, value: unknown) => {
-    if (hasActiveTextSelection()) return;
+    if (dataGridBrowserService.hasActiveTextSelection()) return;
     onCellClick?.({ row, rowIndex, column, value });
   };
 
@@ -423,13 +236,8 @@ export function DataGrid<T extends RowData>({
   const handleCopyClick = (event: MouseEvent<HTMLButtonElement>, text: string, cellKey: string) => {
     event.preventDefault();
     event.stopPropagation();
-    void copyTextToClipboard(text).then(() => {
-      setCopiedCellKey(cellKey);
-      if (copyFeedbackTimeoutRef.current) window.clearTimeout(copyFeedbackTimeoutRef.current);
-      copyFeedbackTimeoutRef.current = window.setTimeout(() => {
-        setCopiedCellKey((current) => (current === cellKey ? null : current));
-        copyFeedbackTimeoutRef.current = null;
-      }, COPY_FEEDBACK_DURATION_MS);
+    void dataGridBrowserService.copyTextToClipboard(text).then(() => {
+      showCopyFeedback(cellKey);
     });
   };
 
@@ -575,15 +383,15 @@ export function DataGrid<T extends RowData>({
                   >
                     {renderedColumns.map((virtualColumn) => {
                       const column = visibleColumns[virtualColumn.index];
-                      const value = getCellValue(row, column);
+                      const value = dataGridModelService.getCellValue(row, column);
                       const isFrozen = virtualColumn.index < normalizedFrozenColumnCount;
                       const canCopy = Boolean(column.copyable || column.copyValue);
                       const copyValue = canCopy ? getCopyValue(row, column, value) : '';
-                      const cellTone = resolveCellTone(row, column, value);
+                      const cellTone = dataGridModelService.resolveCellTone(row, column, value);
                       const cellKey = `${rowId}:${column.id}`;
                       const isCopied = copiedCellKey === cellKey;
                       const renderedCell = renderCell(row, column);
-                      const tooltip = getTooltipText(value, renderedCell);
+                      const tooltip = dataGridModelService.getTooltipText(value, renderedCell);
                       return (
                         <div
                           key={`${rowId}-${column.id}`}

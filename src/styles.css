@@ -667,6 +667,16 @@
   scrollbar-width: thin;
 }
 
+.pg-data-grid-shell > .pg-data-grid:first-child {
+  border-top-left-radius: calc(var(--pg-radius, var(--pg-default-radius)) - 1px);
+  border-top-right-radius: calc(var(--pg-radius, var(--pg-default-radius)) - 1px);
+}
+
+.pg-data-grid-shell > .pg-data-grid:last-child {
+  border-bottom-right-radius: calc(var(--pg-radius, var(--pg-default-radius)) - 1px);
+  border-bottom-left-radius: calc(var(--pg-radius, var(--pg-default-radius)) - 1px);
+}
+
 .pg-grid-header {
   position: sticky;
   top: 0;
@@ -979,6 +989,11 @@
   color: var(--pg-muted, var(--pg-default-muted));
   font-size: 12px;
   font-weight: 720;
+}
+
+.pg-data-grid-shell > .pg-pagination:last-child {
+  border-bottom-right-radius: calc(var(--pg-radius, var(--pg-default-radius)) - 1px);
+  border-bottom-left-radius: calc(var(--pg-radius, var(--pg-default-radius)) - 1px);
 }
 
 .pg-pagination-page-size,
