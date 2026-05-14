@@ -16,8 +16,8 @@ The npm tarball is controlled by `package.json`:
 - `exports` defines the package root, CSS entry, and Tailwind preset entry.
 - `sideEffects` keeps CSS from being tree-shaken away by bundlers.
 - `peerDependencies` keep React and React DOM outside the bundle.
-- `prepare` runs `npm run build`, so `npm pack`, `npm publish`, and GitHub installs build `dist` even though `dist` is not committed.
 - `prepublishOnly` runs `npm run release` before a real `npm publish`.
+- `release` builds `dist` before `npm pack --dry-run`; avoid install-time lifecycle scripts so package consumers do not run project build commands during install.
 
 The package homepage points to the deployed playground:
 
@@ -77,7 +77,8 @@ Before any public version:
 5. Run `npm ci`.
 6. Run `npm run release`.
 7. Run `npm audit --omit=dev`.
-8. Confirm the package name if this is the first publish:
+8. Confirm there are no install-time lifecycle scripts in `package.json`; `prepublishOnly` is acceptable because it runs during publish, not consumer install.
+9. Confirm the package name if this is the first publish:
 
 ```bash
 npm view pivot-grid-table
@@ -85,14 +86,14 @@ npm view pivot-grid-table
 
 If npm returns package metadata, the name is already taken. If it returns a 404-style error, the name is likely available.
 
-9. Build an actual tarball for smoke testing:
+10. Build an actual tarball for smoke testing:
 
 ```bash
 npm pack
 ```
 
-10. Install the generated `pivot-grid-table-<version>.tgz` in a separate app and verify imports, CSS, types, and production build.
-11. Confirm CI is green on the release commit.
+11. Install the generated `pivot-grid-table-<version>.tgz` in a separate app and verify imports, CSS, types, and production build.
+12. Confirm CI is green on the release commit.
 
 ## First Alpha Release
 

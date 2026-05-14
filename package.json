@@ -3,6 +3,7 @@
   "version": "0.1.0-alpha.0",
   "description": "Open-source React data grid and pivot table with client/server pivot support, virtualization, and themeable CSS tokens.",
   "type": "module",
+  "packageManager": "npm@10.9.2",
   "license": "MIT",
   "author": "Tomasz Jabłoński",
   "repository": {
@@ -61,7 +62,6 @@
     "coverage": "vitest run --coverage",
     "release": "npm run check && npm run typecheck && npm run coverage && npm run build && npm run pack:check",
     "prepublishOnly": "npm run release",
-    "prepare": "npm run build",
     "pack:check": "npm pack --dry-run --cache .npm-cache"
   },
   "dependencies": {
