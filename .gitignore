@@ -1,5 +1,5 @@
 .DS_Store
-.codex
+.codex/environments
 node_modules
 dist
 coverage
