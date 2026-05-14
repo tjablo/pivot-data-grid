@@ -16,6 +16,7 @@ const rawColumns: DataGridColumn<RowData>[] = [
     width: 190,
     align: 'right',
     sortable: true,
+    copyable: true,
     valueTone: 'signed',
     format: formatPlaygroundNumber,
   },

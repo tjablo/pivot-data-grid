@@ -478,16 +478,10 @@ export function DataGrid<T extends RowData>({
                               })}
                               type="button"
                               aria-label={isCopied ? labels.copiedCellValue : labels.copyCellValue}
-                              title={isCopied ? labels.copiedCellValue : labels.copyCellValue}
                               onClick={(event) => handleCopyClick(event, copyValue, cellKey)}
                             >
                               {isCopied ? <Check className="pg-copy-icon" aria-hidden /> : <Copy className="pg-copy-icon" aria-hidden />}
                             </button>
-                          ) : null}
-                          {isCopied ? (
-                            <span className="pg-copy-status" role="status">
-                              {labels.copiedCellValue}
-                            </span>
                           ) : null}
                         </div>
                       );

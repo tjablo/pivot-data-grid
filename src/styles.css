@@ -1088,28 +1088,6 @@
   z-index: 16;
 }
 
-.pg-copy-status {
-  position: absolute;
-  right: 34px;
-  top: 50%;
-  z-index: 24;
-  display: inline-flex;
-  align-items: center;
-  min-height: 24px;
-  border: 1px solid var(--pg-border, var(--pg-default-border));
-  border-radius: 8px;
-  background: var(--pg-surface-raised, var(--pg-default-surface-raised));
-  color: var(--pg-accent-strong, var(--pg-default-accent-strong));
-  box-shadow: var(--pg-shadow, var(--pg-default-shadow));
-  padding: 0 9px;
-  font-size: 11px;
-  font-weight: 820;
-  pointer-events: none;
-  transform: translateY(-50%);
-  white-space: nowrap;
-  animation: pg-copy-status-in 160ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
-}
-
 .pg-grid-row .pg-grid-cell-clickable:hover {
   background: color-mix(
     in srgb,
@@ -1355,13 +1333,6 @@
   }
 }
 
-@keyframes pg-copy-status-in {
-  from {
-    opacity: 0;
-    transform: translateY(-42%) scale(0.96);
-  }
-}
-
 @keyframes pg-tooltip-in {
   from {
     opacity: 0;
@@ -1388,7 +1359,6 @@
   .pg-filter-menu-content,
   .pg-values-menu-content,
   .pg-copy-button-copied,
-  .pg-copy-status,
   .pg-grid-tooltip,
   .pg-skeleton-block {
     animation: none;

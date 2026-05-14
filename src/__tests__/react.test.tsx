@@ -57,7 +57,8 @@ describe('DataGrid', () => {
     fireEvent.click(screen.getAllByRole('button', { name: 'Copy cell value' })[0]);
     await waitFor(() => expect(writeText).toHaveBeenCalledWith('Laptop'));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Copied' })).toBeInTheDocument());
-    expect(screen.getByRole('status')).toHaveTextContent('Copied');
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Copied' })).not.toHaveAttribute('title');
     fireEvent.click(screen.getAllByRole('button', { name: 'Copy cell value' }).at(-1) as HTMLElement);
     await waitFor(() => expect(writeText).toHaveBeenCalledWith('-25'));
 

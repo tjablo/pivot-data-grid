@@ -13,8 +13,8 @@ export const fields: PivotFieldConfig[] = [
   { field: 'channel', label: 'Channel', role: 'dimension', type: 'string' },
   { field: 'segment', label: 'Segment', role: 'dimension', type: 'string' },
   { field: 'salesRep.name', label: 'Sales rep', role: 'dimension', type: 'string', copyable: true },
-  { field: 'amount', label: 'Amount', role: 'value', type: 'number', valueTone: 'signed' },
-  { field: 'units', label: 'Units', role: 'value', type: 'number' },
+  { field: 'amount', label: 'Amount', role: 'value', type: 'number', copyable: true, valueTone: 'signed' },
+  { field: 'units', label: 'Units', role: 'value', type: 'number', copyable: true },
   { field: 'orderedAt', label: 'Ordered at', role: 'filter-only', type: 'date' },
 ];
 
