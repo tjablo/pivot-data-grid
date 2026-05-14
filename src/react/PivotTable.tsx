@@ -1,12 +1,13 @@
 import { useCallback, useMemo, useState } from 'react';
 import { autoDetectFields, buildDefaultModel } from '../core/fields';
+import { normalizePivotModel } from '../core/model';
 import { getPivotTotalColumnId, getPivotValueColumnId } from '../core/pivot';
 import type { PivotFieldConfig, PivotModel, PivotResult, PivotRow, RowData } from '../core/types';
 import { DataGrid } from './DataGrid';
 import type { DataGridColumn, PaginationState, SortState } from './DataGrid.types';
 import { DrillDownPanel } from './DrillDownPanel';
 import { type PivotTableLabels, resolvePivotTableLabels } from './labels';
-import type { PivotTableProps } from './PivotTable.types';
+import type { PivotTableColumnSize, PivotTableColumnSizing, PivotTableProps } from './PivotTable.types';
 import { PivotToolbar } from './PivotToolbar';
 import { PortalContainerContext } from './portalContext';
 import { useControllableState } from './useControllableState';
@@ -23,21 +24,40 @@ function formatNumber(value: unknown, fallback?: (value: number | null, columnId
   return fallback ? fallback(numericValue, columnId) : numericValue.toLocaleString(undefined, { maximumFractionDigits: 2 });
 }
 
+function getValueLabel(
+  valueConfig: PivotModel['values'][number],
+  fields: PivotFieldConfig[],
+  labels: PivotTableLabels,
+  includeFieldLabel: boolean,
+): string {
+  if (valueConfig.label) return valueConfig.label;
+  if (!includeFieldLabel) return labels.aggregations[valueConfig.aggFunc];
+  const valueField = fields.find((field) => field.field === valueConfig.field);
+  const fieldLabel = valueField?.label ?? valueConfig.field;
+  return `${fieldLabel} ${labels.aggregations[valueConfig.aggFunc]}`;
+}
+
+function getColumnSize(defaultWidth: number, size?: PivotTableColumnSize) {
+  return { width: defaultWidth, ...size };
+}
+
 function buildColumns(
   result: PivotResult,
   model: PivotModel,
   fields: PivotFieldConfig[],
   labels: PivotTableLabels,
   formatValue?: (value: number | null, columnId: string) => string,
+  columnSizing?: PivotTableColumnSizing,
 ): DataGridColumn<PivotRow>[] {
   const isSingleValue = model.values.length === 1;
+  const isSingleValueField = new Set(model.values.map((value) => value.field)).size === 1;
   const columns: DataGridColumn<PivotRow>[] = model.rows.map((rowField) => {
     const field = fields.find((candidate) => candidate.field === rowField);
     return {
       id: rowField,
       header: field?.label ?? rowField,
       accessor: rowField,
-      width: 180,
+      ...getColumnSize(180, columnSizing?.row),
       sortable: true,
       copyable: field?.copyable,
       valueTone: field?.valueTone,
@@ -48,7 +68,7 @@ function buildColumns(
     id: '_count',
     header: labels.countColumn,
     accessor: '_count',
-    width: 92,
+    ...getColumnSize(92, columnSizing?.count),
     align: 'right',
     sortable: true,
     className: 'pg-metric-cell',
@@ -60,12 +80,12 @@ function buildColumns(
       const valueField = fields.find((field) => field.field === valueConfig.field);
       const suffix = isSingleValue ? valueConfig.field : `${valueConfig.field}:${valueConfig.aggFunc}`;
       const id = getPivotValueColumnId(pivotColumn.id, suffix);
-      const fieldLabel = valueField?.label ?? valueConfig.field;
+      const valueLabel = getValueLabel(valueConfig, fields, labels, !isSingleValueField);
       columns.push({
         id,
-        header: isSingleValue ? pivotColumn.label : `${pivotColumn.label} (${fieldLabel})`,
+        header: isSingleValue ? pivotColumn.label : `${pivotColumn.label} (${valueLabel})`,
         accessor: id,
-        width: 148,
+        ...getColumnSize(148, columnSizing?.value),
         align: 'right',
         sortable: true,
         className: 'pg-metric-cell',
@@ -80,12 +100,12 @@ function buildColumns(
     const valueField = fields.find((field) => field.field === valueConfig.field);
     const suffix = isSingleValue ? valueConfig.field : `${valueConfig.field}:${valueConfig.aggFunc}`;
     const id = getPivotTotalColumnId(suffix);
-    const fieldLabel = valueField?.label ?? valueConfig.field;
+    const valueLabel = getValueLabel(valueConfig, fields, labels, !isSingleValueField);
     columns.push({
       id,
-      header: isSingleValue ? labels.totalColumn : labels.totalColumnWithValue(fieldLabel),
+      header: isSingleValue ? labels.totalColumn : labels.totalColumnWithValue(valueLabel),
       accessor: id,
-      width: 148,
+      ...getColumnSize(148, columnSizing?.total),
       align: 'right',
       sortable: true,
       className: 'pg-metric-cell',
@@ -103,15 +123,17 @@ function buildLoadingColumns(
   fields: PivotFieldConfig[],
   labels: PivotTableLabels,
   formatValue?: (value: number | null, columnId: string) => string,
+  columnSizing?: PivotTableColumnSizing,
 ): DataGridColumn<PivotRow>[] {
   const isSingleValue = model.values.length === 1;
+  const isSingleValueField = new Set(model.values.map((value) => value.field)).size === 1;
   const columns: DataGridColumn<PivotRow>[] = model.rows.map((rowField) => {
     const field = fields.find((candidate) => candidate.field === rowField);
     return {
       id: rowField,
       header: field?.label ?? rowField,
       accessor: rowField,
-      width: 180,
+      ...getColumnSize(180, columnSizing?.row),
       sortable: true,
       copyable: field?.copyable,
       valueTone: field?.valueTone,
@@ -122,7 +144,7 @@ function buildLoadingColumns(
     id: '_count',
     header: labels.countColumn,
     accessor: '_count',
-    width: 92,
+    ...getColumnSize(92, columnSizing?.count),
     align: 'right',
     sortable: true,
     className: 'pg-metric-cell',
@@ -133,12 +155,12 @@ function buildLoadingColumns(
     const valueField = fields.find((field) => field.field === valueConfig.field);
     const suffix = isSingleValue ? valueConfig.field : `${valueConfig.field}:${valueConfig.aggFunc}`;
     const id = getPivotTotalColumnId(suffix);
-    const fieldLabel = valueField?.label ?? valueConfig.field;
+    const valueLabel = getValueLabel(valueConfig, fields, labels, !isSingleValueField);
     columns.push({
       id,
-      header: isSingleValue ? labels.totalColumn : labels.totalColumnWithValue(fieldLabel),
+      header: isSingleValue ? labels.totalColumn : labels.totalColumnWithValue(valueLabel),
       accessor: id,
-      width: 148,
+      ...getColumnSize(148, columnSizing?.total),
       align: 'right',
       sortable: true,
       className: 'pg-metric-cell',
@@ -152,7 +174,7 @@ function buildLoadingColumns(
     columns.push({
       id: '__loading__',
       header: labels.loading,
-      width: 160,
+      ...getColumnSize(160, columnSizing?.loading),
     });
   }
 
@@ -172,6 +194,7 @@ export function PivotTable(props: PivotTableProps) {
     deferFilterUpdates,
     className,
     height = 520,
+    columnSizing,
     drillDown: drillDownOptions,
     frozenColumnCount = 1,
     labels: labelOverrides,
@@ -196,8 +219,9 @@ export function PivotTable(props: PivotTableProps) {
   const clientMode = 'data' in props && props.data != null;
   const sourceData: RowData[] = clientMode ? props.data : [];
   const fields = useMemo(() => autoDetectFields(sourceData, props.fields), [props.fields, sourceData]);
-  const fallbackModel = useMemo(() => defaultPivotModel ?? buildDefaultModel(fields), [defaultPivotModel, fields]);
+  const fallbackModel = useMemo(() => normalizePivotModel(defaultPivotModel ?? buildDefaultModel(fields)), [defaultPivotModel, fields]);
   const [model, setModel] = useControllableState(pivotModel, fallbackModel, onPivotModelChange);
+  const normalizedModel = useMemo(() => normalizePivotModel(model), [model]);
   const [sourceFilters, setSourceFilters] = useControllableState(filters, [], onFiltersChange);
   const [portalContainer, setPortalContainer] = useState<HTMLDivElement | null>(null);
   const setRootRef = useCallback((node: HTMLDivElement | null) => {
@@ -211,7 +235,7 @@ export function PivotTable(props: PivotTableProps) {
 
   const handleModelChange = useCallback(
     (nextModel: PivotModel) => {
-      setModel(nextModel);
+      setModel(normalizePivotModel(nextModel));
       resetManagedPivotPage();
     },
     [resetManagedPivotPage, setModel],
@@ -232,7 +256,7 @@ export function PivotTable(props: PivotTableProps) {
   const managedPivot = useManagedPivotPage({
     enabled: hasManagedPivotLoader,
     getPage: managedPivotGetPage,
-    model,
+    model: normalizedModel,
     filters: sourceFilters,
     page: managedPivotPage,
     sort: managedPivotSort,
@@ -242,7 +266,7 @@ export function PivotTable(props: PivotTableProps) {
     clientMode,
     sourceData,
     sourceFilters,
-    model,
+    model: normalizedModel,
     serverResult: clientMode ? null : hasManagedPivotLoader ? managedPivot.result : 'pivotResult' in props ? props.pivotResult : null,
   });
   const pivotTotalRows = hasManagedPivotLoader ? managedPivot.totalRows : pivotPagination.totalRows;
@@ -258,16 +282,16 @@ export function PivotTable(props: PivotTableProps) {
   const columns = useMemo(
     () =>
       result
-        ? buildColumns(result, model, fields, labels, formatValue)
+        ? buildColumns(result, normalizedModel, fields, labels, formatValue, columnSizing)
         : isPivotLoading
-          ? buildLoadingColumns(model, fields, labels, formatValue)
+          ? buildLoadingColumns(normalizedModel, fields, labels, formatValue, columnSizing)
           : [],
-    [fields, formatValue, isPivotLoading, labels, model, result],
+    [columnSizing, fields, formatValue, isPivotLoading, labels, normalizedModel, result],
   );
 
   const drillDown = usePivotDrillDown({
     clientMode,
-    model,
+    model: normalizedModel,
     result,
     filteredData,
     sourceFilters,
@@ -302,7 +326,7 @@ export function PivotTable(props: PivotTableProps) {
       <PortalContainerContext.Provider value={portalContainer}>
         <PivotToolbar
           fields={fields}
-          model={model}
+          model={normalizedModel}
           onModelChange={handleModelChange}
           filters={sourceFilters}
           onFiltersChange={handleFiltersChange}

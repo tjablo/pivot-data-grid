@@ -1,4 +1,5 @@
 import { DataGrid, type DataGridColumn, type RowData } from '../../../src';
+import { formatPlaygroundNumber } from '../demoData';
 import type { ThemeMode } from '../types';
 
 const rawColumns: DataGridColumn<RowData>[] = [
@@ -12,11 +13,11 @@ const rawColumns: DataGridColumn<RowData>[] = [
     id: 'amount',
     header: 'Amount',
     accessor: 'amount',
-    width: 130,
+    width: 190,
     align: 'right',
     sortable: true,
     valueTone: 'signed',
-    format: (value) => Number(value).toLocaleString('en-US'),
+    format: formatPlaygroundNumber,
   },
   { id: 'orderedAt', header: 'Ordered at', accessor: 'orderedAt', width: 130, sortable: true },
 ];

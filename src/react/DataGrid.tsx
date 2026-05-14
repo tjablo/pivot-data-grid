@@ -12,24 +12,40 @@ import { dataGridModelService } from './DataGridModelService';
 import { resolveDataGridLabels } from './labels';
 import { usePortalContainer } from './portalContext';
 import { useElementWidth } from './useElementWidth';
-import { useIsTruncated } from './useIsTruncated';
+import { useFloatingTooltip } from './useFloatingTooltip';
+import { isElementTruncated, useIsTruncated } from './useIsTruncated';
 import { useTimedCellFeedback } from './useTimedCellFeedback';
 
 const COPY_FEEDBACK_DURATION_MS = 1200;
 
-function CellContent({ children, tooltip }: { children: ReactNode; tooltip: string }) {
-  const contentRef = useRef<HTMLDivElement | null>(null);
+interface TruncatedContentProps {
+  children: ReactNode;
+  tooltip: string;
+}
+
+function CellContent({ children, tooltip }: TruncatedContentProps) {
+  const contentRef = useRef<HTMLSpanElement | null>(null);
   const isTruncated = useIsTruncated(contentRef, tooltip);
 
   return (
-    <div
-      ref={contentRef}
-      className="pg-grid-cell-content"
-      data-truncated={isTruncated || undefined}
-      title={isTruncated ? tooltip : undefined}
-    >
-      {children}
+    <div className="pg-grid-cell-content" data-truncated={isTruncated || undefined}>
+      <span ref={contentRef} className="pg-truncated-content" data-grid-tooltip={tooltip || undefined}>
+        {children}
+      </span>
     </div>
+  );
+}
+
+function HeaderContent({ children, tooltip }: TruncatedContentProps) {
+  const contentRef = useRef<HTMLSpanElement | null>(null);
+  const isTruncated = useIsTruncated(contentRef, tooltip);
+
+  return (
+    <span className="pg-header-label" data-truncated={isTruncated || undefined}>
+      <span ref={contentRef} className="pg-truncated-content" data-grid-tooltip={tooltip || undefined}>
+        {children}
+      </span>
+    </span>
   );
 }
 
@@ -64,13 +80,17 @@ export function DataGrid<T extends RowData>({
   labels: labelOverrides,
 }: DataGridProps<T>) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const shellRef = useRef<HTMLDivElement | null>(null);
   const inheritedPortalContainer = usePortalContainer();
   const [localPortalContainer, setLocalPortalContainer] = useState<HTMLDivElement | null>(null);
   const portalContainer = inheritedPortalContainer ?? localPortalContainer;
   const setShellRef = useCallback((node: HTMLDivElement | null) => {
+    shellRef.current = node;
     setLocalPortalContainer(node);
   }, []);
   const labels = useMemo(() => resolveDataGridLabels(labelOverrides), [labelOverrides]);
+  const { tooltip, showTooltip, hideTooltip } = useFloatingTooltip();
+  const tooltipAnchorRef = useRef<HTMLElement | null>(null);
   const normalizedPageSizeOptions = useMemo(() => dataGridModelService.normalizePageSizeOptions(pageSizeOptions), [pageSizeOptions]);
   const viewportWidth = useElementWidth(scrollRef);
   const [hiddenColumnIds, setHiddenColumnIds] = useState(() => new Set(initialHiddenColumnIds));
@@ -241,6 +261,33 @@ export function DataGrid<T extends RowData>({
     });
   };
 
+  const closeTooltip = useCallback(() => {
+    tooltipAnchorRef.current = null;
+    hideTooltip();
+  }, [hideTooltip]);
+
+  const handleGridMouseMove = useCallback(
+    (event: MouseEvent<HTMLDivElement>) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) {
+        closeTooltip();
+        return;
+      }
+
+      const anchor = target.closest<HTMLElement>('[data-grid-tooltip]');
+      const tooltipText = anchor?.dataset.gridTooltip;
+      if (!anchor || !tooltipText || !scrollRef.current?.contains(anchor) || !isElementTruncated(anchor)) {
+        closeTooltip();
+        return;
+      }
+
+      if (tooltipAnchorRef.current === anchor) return;
+      tooltipAnchorRef.current = anchor;
+      showTooltip(tooltipText, anchor, shellRef.current);
+    },
+    [closeTooltip, showTooltip],
+  );
+
   return (
     <div ref={setShellRef} className={clsx('pg-root', 'pg-data-grid-shell', className)} style={style}>
       {(showColumnMenu && columns.length > 0) || toolbarContent ? (
@@ -282,6 +329,9 @@ export function DataGrid<T extends RowData>({
         aria-rowcount={pagination ? rowCountForPagination : sortedRows.length}
         aria-colcount={visibleColumns.length}
         aria-busy={loading || undefined}
+        onMouseMove={handleGridMouseMove}
+        onMouseLeave={closeTooltip}
+        onScroll={closeTooltip}
       >
         <div className="pg-grid-header" style={{ height: headerHeight, width: totalWidth }}>
           {renderedColumns.map((virtualColumn) => {
@@ -306,7 +356,7 @@ export function DataGrid<T extends RowData>({
                 onClick={() => setSort(column)}
                 aria-sort={sortDirection ? (sortDirection === 'asc' ? 'ascending' : 'descending') : 'none'}
               >
-                <span className="pg-header-label">{column.header}</span>
+                <HeaderContent tooltip={dataGridModelService.getTooltipText(column.header, column.header)}>{column.header}</HeaderContent>
                 {sortDirection ? (
                   <span
                     className={clsx('pg-sort-indicator', {
@@ -449,6 +499,18 @@ export function DataGrid<T extends RowData>({
 
         {!loading && visibleRows.length === 0 ? <div className="pg-grid-empty">{emptyMessage ?? labels.noRows}</div> : null}
       </div>
+
+      {tooltip ? (
+        <div
+          className="pg-grid-tooltip"
+          role="tooltip"
+          data-placement={tooltip.placement}
+          data-align={tooltip.align}
+          style={{ left: tooltip.left, top: tooltip.top, maxWidth: tooltip.maxWidth }}
+        >
+          {tooltip.text}
+        </div>
+      ) : null}
 
       {pagination ? (
         <nav className="pg-pagination" aria-label={labels.pagination}>

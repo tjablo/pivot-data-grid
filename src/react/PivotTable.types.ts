@@ -4,6 +4,28 @@ import type { PivotTableLabelOverrides } from './labels';
 
 export type PivotTablePaginationMode = PaginationMode;
 
+export interface PivotTableColumnSize {
+  /** Preferred generated column width in pixels. */
+  width?: number;
+  /** Minimum generated column width in pixels. Useful for long formatted values. */
+  minWidth?: number;
+  /** Maximum generated column width in pixels when the grid stretches to fill space. */
+  maxWidth?: number;
+}
+
+export interface PivotTableColumnSizing {
+  /** Row dimension columns generated from `model.rows`. Defaults to 180px. */
+  row?: PivotTableColumnSize;
+  /** The generated count column. Defaults to 92px. */
+  count?: PivotTableColumnSize;
+  /** Generated pivot value columns. Defaults to 148px. */
+  value?: PivotTableColumnSize;
+  /** Generated total value columns. Defaults to 148px. */
+  total?: PivotTableColumnSize;
+  /** Fallback column used before the first server result arrives. Defaults to 160px. */
+  loading?: PivotTableColumnSize;
+}
+
 export interface PivotTableManagedPaginationOptions {
   /** Enables the managed backend pagination control. Defaults to true. */
   enabled?: boolean;
@@ -142,6 +164,8 @@ interface PivotTableBaseProps {
   className?: string;
   /** Height of the pivot or replace-mode drilldown grid. */
   height?: number | string;
+  /** Width/min/max sizing for generated pivot columns. */
+  columnSizing?: PivotTableColumnSizing;
   /** Scoped drilldown behavior, loading rows, and drilldown pagination. */
   drillDown?: PivotTableDrillDownOptions;
   /** Number of leading columns pinned while scrolling horizontally. */

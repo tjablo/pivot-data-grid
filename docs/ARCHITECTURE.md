@@ -106,6 +106,8 @@ The default drill-in view replaces the pivot grid in place and provides a Back a
 
 Client mode filters source rows locally. Managed server mode uses `drillDown.getPage` for first page, page changes, page-size changes, and sort changes. Controlled server mode can still pass `drillDown.rows`, `drillDown.loading`, and `drillDown.pagination` when another data layer owns fetching.
 
+The drilldown grid omits row and column dimension fields already fixed by the active `DrillDownRequest`, so the opened detail table does not repeat values shown in the drilldown title.
+
 ## Virtualization
 
 `DataGrid` virtualizes both rows and columns with TanStack Virtual. Pivot result rows and drilldown rows share the same grid implementation to keep scroll behavior, styling, and accessibility work centralized.
@@ -135,6 +137,8 @@ The renderer emits tone classes such as `.pg-grid-cell-tone-positive` and reads 
 ## Frozen Columns
 
 `DataGrid` exposes `frozenColumnCount` for sticky leading columns. It defaults to `0` for generic grid usage. `PivotTable` defaults to `1` so the primary row dimension stays visible during horizontal scrolling; consumers can disable this with `frozenColumnCount={0}` or freeze additional leading columns with a higher value.
+
+`PivotTable` generates row, count, value, total, and loading fallback columns from the current model. Consumers can tune those generated widths with `columnSizing`, including `minWidth` for long formatted numbers. The generated settings are passed through to `DataGridColumn`, so the shared grid width rules stay centralized in `DataGrid`.
 
 ## Styling
 

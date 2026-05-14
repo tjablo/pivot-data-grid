@@ -5,6 +5,7 @@ const regions = ['AMER', 'EMEA', 'APAC', 'LATAM'];
 const channels = ['Direct', 'Partner', 'Marketplace'];
 const segments = ['SMB', 'Mid-market', 'Enterprise'];
 const reps = ['Ada', 'Grace', 'Linus', 'Katherine', 'Margaret', 'Donald'];
+const highPrecisionAmounts = [1250000.12345678, 9875432.87654321, -2500000.00000001, 42000000.12345678, 3333333.33333333];
 
 export const fields: PivotFieldConfig[] = [
   { field: 'product', label: 'Product', role: 'dimension', type: 'string', copyable: true },
@@ -27,6 +28,17 @@ function pick<T>(items: T[], index: number, multiplier = 1): T {
   return items[(index * multiplier) % items.length];
 }
 
+export function formatPlaygroundNumber(value: unknown): string {
+  if (value == null) return '-';
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) return String(value);
+  const hasFraction = !Number.isInteger(numericValue);
+  return numericValue.toLocaleString('en-US', {
+    minimumFractionDigits: hasFraction ? 8 : 0,
+    maximumFractionDigits: hasFraction ? 8 : 0,
+  });
+}
+
 export function createOrders(count = 1400): RowData[] {
   return Array.from({ length: count }, (_, index) => {
     const units = (index % 9) + 1;
@@ -35,7 +47,8 @@ export function createOrders(count = 1400): RowData[] {
     const region = pick(regions, index, 3);
     const segment = pick(segments, index, 5);
     const grossAmount = base * units + (segment === 'Enterprise' ? 420 : 0) + (region === 'APAC' ? 180 : 0);
-    const amount = product === 'Router' || index % 19 === 0 ? -Math.round(grossAmount * 0.72) : grossAmount;
+    const standardAmount = product === 'Router' || index % 19 === 0 ? -Math.round(grossAmount * 0.72) : grossAmount;
+    const amount = highPrecisionAmounts[index] ?? standardAmount;
 
     return {
       id: `ord-${String(index + 1).padStart(5, '0')}`,

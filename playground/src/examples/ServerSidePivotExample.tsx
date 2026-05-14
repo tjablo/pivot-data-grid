@@ -12,7 +12,7 @@ import {
   type RowData,
   type SourceFilter,
 } from '../../../src';
-import { defaultPivotModel, fields } from '../demoData';
+import { defaultPivotModel, fields, formatPlaygroundNumber } from '../demoData';
 import type { ThemeMode } from '../types';
 
 interface ServerSidePivotExampleProps {
@@ -204,6 +204,7 @@ export function ServerSidePivotExample({ orders, theme }: ServerSidePivotExample
         fields={fields}
         defaultPivotModel={defaultPivotModel}
         deferFilterUpdates
+        formatValue={formatPlaygroundNumber}
         entityName="orders"
         pagination={{
           defaultPageSize: INITIAL_PIVOT_PAGE.pageSize,

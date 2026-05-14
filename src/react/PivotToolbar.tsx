@@ -2,7 +2,7 @@ import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import * as Select from '@radix-ui/react-select';
 import { Check, ChevronDown, ListFilter, Plus, Trash2, X } from 'lucide-react';
 
-import type { PivotFieldConfig, PivotModel, SourceFilter } from '../core/types';
+import type { AggregationFn, PivotFieldConfig, PivotModel, PivotValueConfig, SourceFilter } from '../core/types';
 import { DatePicker } from './DatePicker';
 import type { PivotTableLabels } from './labels';
 import { pivotFilterService } from './PivotFilterService';
@@ -10,6 +10,7 @@ import { usePortalContainer } from './portalContext';
 import { useDraftFilters } from './useDraftFilters';
 
 const NONE_VALUE = '__pg_none__';
+const AGGREGATIONS: AggregationFn[] = ['sum', 'count', 'avg', 'min', 'max'];
 
 interface PivotToolbarProps {
   fields: PivotFieldConfig[];
@@ -93,6 +94,58 @@ function fieldItems(fields: PivotFieldConfig[], includeNone = false, noneLabel =
   return includeNone ? [{ value: NONE_VALUE, label: noneLabel }, ...items] : items;
 }
 
+function getFallbackValueConfig(valueFields: PivotFieldConfig[]): PivotValueConfig {
+  return { field: valueFields[0]?.field ?? '', aggFunc: 'sum' };
+}
+
+function getNextValueConfig(valueFields: PivotFieldConfig[], values: PivotValueConfig[]): PivotValueConfig | null {
+  const preferredField = values[values.length - 1]?.field;
+  const preferredFieldConfig = valueFields.find((fieldConfig) => fieldConfig.field === preferredField);
+  const orderedValueFields = preferredFieldConfig
+    ? [preferredFieldConfig, ...valueFields.filter((fieldConfig) => fieldConfig.field !== preferredFieldConfig.field)]
+    : valueFields;
+
+  for (const fieldConfig of orderedValueFields) {
+    const aggFunc = AGGREGATIONS.find(
+      (candidate) => !values.some((value) => value.field === fieldConfig.field && value.aggFunc === candidate),
+    );
+    if (aggFunc) return { field: fieldConfig.field, aggFunc };
+  }
+
+  return null;
+}
+
+function getAvailableAggregation(
+  values: PivotValueConfig[],
+  index: number,
+  field: string,
+  preferredAggregation: AggregationFn,
+): AggregationFn | null {
+  const isUsed = (aggregation: AggregationFn) =>
+    values.some((value, valueIndex) => valueIndex !== index && value.field === field && value.aggFunc === aggregation);
+  if (!isUsed(preferredAggregation)) return preferredAggregation;
+  return AGGREGATIONS.find((aggregation) => !isUsed(aggregation)) ?? null;
+}
+
+function updateValue(values: PivotValueConfig[], index: number, patch: Partial<PivotValueConfig>): PivotValueConfig[] {
+  return values.map((value, valueIndex) => {
+    if (valueIndex !== index) return value;
+    const candidate = { ...value, ...patch };
+    const aggFunc = getAvailableAggregation(values, index, candidate.field, candidate.aggFunc);
+    return aggFunc ? { ...candidate, aggFunc } : value;
+  });
+}
+
+function getValueControlKey(value: PivotValueConfig): string {
+  return [value.field, value.aggFunc, value.label ?? ''].join(':');
+}
+
+function getValueSummary(value: PivotValueConfig, fields: PivotFieldConfig[], labels: PivotTableLabels): string {
+  if (value.label) return value.label;
+  const field = fields.find((candidate) => candidate.field === value.field);
+  return `${field?.label ?? value.field} - ${labels.aggregations[value.aggFunc]}`;
+}
+
 export function PivotToolbar({
   fields,
   model,
@@ -106,7 +159,10 @@ export function PivotToolbar({
   const dimensionFields = fields.filter(canUseAsDimension);
   const valueFields = fields.filter(canUseAsValue);
   const filterFields = fields;
-  const valueConfig = model.values[0] ?? { field: valueFields[0]?.field ?? '', aggFunc: 'sum' as const };
+  const activeValues = model.values.length > 0 ? model.values : [getFallbackValueConfig(valueFields)];
+  const nextValueConfig = getNextValueConfig(valueFields, activeValues);
+  const firstValueSummary = getValueSummary(activeValues[0], fields, labels);
+  const extraValueCount = Math.max(0, activeValues.length - 1);
   const { activeFilters, filterMenuOpen, setFilterMenuOpen, updateFilters } = useDraftFilters({
     deferUpdates: deferFilterUpdates,
     filters,
@@ -115,8 +171,20 @@ export function PivotToolbar({
 
   const setRow = (field: string) => onModelChange({ ...model, rows: field ? [field] : [] });
   const setColumn = (field: string) => onModelChange({ ...model, columns: field && field !== NONE_VALUE ? [field] : [] });
-  const setValueField = (field: string) => onModelChange({ ...model, values: [{ ...valueConfig, field }] });
-  const setAgg = (aggFunc: typeof valueConfig.aggFunc) => onModelChange({ ...model, values: [{ ...valueConfig, aggFunc }] });
+  const setValueField = (index: number, field: string) => {
+    onModelChange({ ...model, values: updateValue(activeValues, index, { field }) });
+  };
+  const setAgg = (index: number, aggFunc: AggregationFn) => {
+    onModelChange({ ...model, values: updateValue(activeValues, index, { aggFunc }) });
+  };
+  const addValue = () => {
+    if (!nextValueConfig) return;
+    onModelChange({ ...model, values: [...activeValues, nextValueConfig] });
+  };
+  const removeValue = (index: number) => {
+    if (activeValues.length <= 1) return;
+    onModelChange({ ...model, values: activeValues.filter((_, valueIndex) => valueIndex !== index) });
+  };
 
   const addFilter = () => {
     const firstField = filterFields.find((field) => field.role === 'filter-only') ?? filterFields[0];
@@ -152,21 +220,63 @@ export function PivotToolbar({
         onValueChange={setColumn}
       />
 
-      <SelectControl label={labels.valueField} value={valueConfig.field} items={fieldItems(valueFields)} onValueChange={setValueField} />
-
-      <SelectControl
-        label={labels.aggregation}
-        value={valueConfig.aggFunc}
-        compact
-        items={[
-          { value: 'sum', label: labels.aggregations.sum },
-          { value: 'count', label: labels.aggregations.count },
-          { value: 'avg', label: labels.aggregations.avg },
-          { value: 'min', label: labels.aggregations.min },
-          { value: 'max', label: labels.aggregations.max },
-        ]}
-        onValueChange={(value) => setAgg(value as typeof valueConfig.aggFunc)}
-      />
+      <div className="pg-control">
+        <span>{labels.values}</span>
+        <DropdownMenu.Root modal={false}>
+          <DropdownMenu.Trigger asChild>
+            <button className="pg-button pg-values-menu-trigger" type="button" aria-label={labels.values}>
+              <span className="pg-values-menu-label" title={firstValueSummary}>
+                {firstValueSummary}
+              </span>
+              {extraValueCount > 0 ? <span className="pg-values-extra-count">+{extraValueCount}</span> : null}
+              <ChevronDown className="pg-button-icon" aria-hidden />
+            </button>
+          </DropdownMenu.Trigger>
+          <DropdownMenu.Portal container={portalContainer ?? undefined}>
+            <DropdownMenu.Content className="pg-values-menu-content" align="end" sideOffset={12}>
+              <div className="pg-values-menu-header">
+                <span>{labels.values}</span>
+                <span className="pg-values-count">{activeValues.length}</span>
+              </div>
+              <div className="pg-values-menu-body">
+                <div className="pg-values-list">
+                  {activeValues.map((valueConfig, index) => (
+                    <div className="pg-value-row" key={getValueControlKey(valueConfig)}>
+                      <SelectInput
+                        ariaLabel={labels.valueFieldAria(index + 1)}
+                        value={valueConfig.field}
+                        items={fieldItems(valueFields)}
+                        triggerClassName="pg-value-field-trigger"
+                        onValueChange={(field) => setValueField(index, field)}
+                      />
+                      <SelectInput
+                        ariaLabel={labels.aggregationAria(index + 1)}
+                        value={valueConfig.aggFunc}
+                        items={AGGREGATIONS.map((aggregation) => ({ value: aggregation, label: labels.aggregations[aggregation] }))}
+                        triggerClassName="pg-value-aggregation-trigger"
+                        onValueChange={(value) => setAgg(index, value as AggregationFn)}
+                      />
+                      <button
+                        className="pg-value-remove"
+                        type="button"
+                        aria-label={labels.removeValue(index + 1)}
+                        onClick={() => removeValue(index)}
+                        disabled={activeValues.length <= 1}
+                      >
+                        <X className="pg-action-icon" aria-hidden />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <button className="pg-values-add" type="button" onClick={addValue} disabled={!nextValueConfig}>
+                  <Plus className="pg-action-icon" aria-hidden />
+                  {labels.addValue}
+                </button>
+              </div>
+            </DropdownMenu.Content>
+          </DropdownMenu.Portal>
+        </DropdownMenu.Root>
+      </div>
 
       <div className="pg-toolbar-spacer" />
 

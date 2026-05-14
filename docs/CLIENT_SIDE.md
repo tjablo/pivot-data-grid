@@ -47,9 +47,35 @@ Use `pagination={false}` only when the pivot result is known to stay small enoug
 
 Source filter edits are drafted while the filter action menu is open and applied when the menu closes. In client-side mode this avoids recomputing the pivot for every keystroke while a user is still editing a filter value. Pass `deferFilterUpdates={false}` when immediate local filtering is preferred.
 
+## Multiple Values
+
+`PivotModel.values` can contain more than one value aggregation. The toolbar opens value configuration from a compact `Values` menu so users can add, remove, and edit multiple metrics without expanding the main toolbar.
+
+```tsx
+<PivotTable
+  data={orders}
+  fields={fields}
+  defaultPivotModel={{
+    rows: ['product'],
+    columns: ['region'],
+    values: [
+      { field: 'amount', aggFunc: 'sum' },
+      { field: 'amount', aggFunc: 'min' },
+      { field: 'amount', aggFunc: 'avg' },
+    ],
+  }}
+/>
+```
+
+When all active values use the same source field, generated metric headers stay compact, for example `AMER (Sum)`, `AMER (Min)`, and `Total (Avg)`. If values use different fields, headers include the field label as well so metrics remain distinguishable.
+
+Each value metric is unique by the pair `{ field, aggFunc }`. Duplicate pairs are normalized away before client aggregation and before managed backend requests.
+
 ## Drilldown
 
 Drilldown is automatic in client-side mode. A metric cell creates a `DrillDownRequest`, then the component filters the already-loaded rows by the clicked row and column dimension values.
+
+The drilldown title shows the fixed row and column dimension values, and the drilldown grid omits those same scoped fields from its columns to avoid repeated data.
 
 ```tsx
 <PivotTable

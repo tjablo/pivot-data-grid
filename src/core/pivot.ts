@@ -1,4 +1,5 @@
 import { getNestedValue, stringifyValue, toFiniteNumber } from './access';
+import { normalizePivotValues } from './model';
 import type { AggregationFn, PivotColumnKey, PivotModel, PivotResult, PivotRow, PivotValueConfig, RowData } from './types';
 
 const KEY_SEPARATOR = '\u001f';
@@ -133,7 +134,7 @@ export function parsePivotTotalColumnId(columnId: string): { valueField: string 
 export function pivotData(data: RowData[], model: PivotModel): PivotResult {
   const rowFields = model.rows.filter(Boolean);
   const columnFields = model.columns.filter(Boolean);
-  const valueFields = model.values.filter((value) => value.field && value.aggFunc);
+  const valueFields = normalizePivotValues(model.values);
   const groups = new Map<string, GroupState>();
   const columnMap = new Map<string, PivotColumnKey>();
 

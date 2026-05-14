@@ -83,6 +83,21 @@ describe('pivotData', () => {
     expect(emea?.['_total__amount%3Amax']).toBe(100);
     expect(emea?.['_total__amount%3Acount']).toBe(2);
   });
+
+  it('deduplicates repeated value aggregations before aggregating', () => {
+    const result = pivotData(rows, {
+      rows: ['region'],
+      columns: [],
+      values: [
+        { field: 'amount', aggFunc: 'sum' },
+        { field: 'amount', aggFunc: 'sum' },
+      ],
+    });
+    const emea = result.rows.find((row) => row.region === 'EMEA');
+
+    expect(result.valueFields).toEqual([{ field: 'amount', aggFunc: 'sum' }]);
+    expect(emea?._total__amount).toBe(150);
+  });
 });
 
 describe('drilldown', () => {
@@ -115,5 +130,21 @@ describe('backend request helper', () => {
       filters: [{ id: 'f', field: 'region', operator: 'equals', value: 'EMEA' }],
       limit: 50,
     });
+  });
+
+  it('normalizes duplicate value aggregations in pivot requests', () => {
+    expect(
+      createPivotRequest({
+        ...model,
+        values: [
+          { field: 'amount', aggFunc: 'sum' },
+          { field: 'amount', aggFunc: 'sum' },
+          { field: 'amount', aggFunc: 'avg' },
+        ],
+      }).model.values,
+    ).toEqual([
+      { field: 'amount', aggFunc: 'sum' },
+      { field: 'amount', aggFunc: 'avg' },
+    ]);
   });
 });

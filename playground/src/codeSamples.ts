@@ -61,7 +61,7 @@ const dataShapeCode = `type OrderRow = RowData & {
   region: 'AMER' | 'EMEA' | 'APAC' | 'LATAM';
   channel: string;
   segment: string;
-  amount: number;
+  amount: number; // Some sample rows use million-scale decimals with 8 fractional digits.
   units: number;
   orderedAt: string; // ISO date string used by date filters.
   salesRep: {
@@ -69,12 +69,25 @@ const dataShapeCode = `type OrderRow = RowData & {
   };
 };`;
 
+const formatNumberCode = `function formatNumber(value: unknown): string {
+  if (value == null) return '-';
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) return String(value);
+  const hasFraction = !Number.isInteger(numericValue);
+  return numericValue.toLocaleString('en-US', {
+    minimumFractionDigits: hasFraction ? 8 : 0,
+    maximumFractionDigits: hasFraction ? 8 : 0,
+  });
+}`;
+
 function getClientPivotCode(theme: ThemeMode) {
   return `import { useMemo } from 'react';
 import { PivotTable, type PivotFieldConfig, type PivotModel, type RowData } from 'pivot-grid-table';
 import 'pivot-grid-table/styles.css';
 
 ${dataShapeCode}
+
+${formatNumberCode}
 
 export function OrdersPivot({ orders }: { orders: OrderRow[] }) {
   // Keep field metadata stable so toolbar menus do not rebuild on every render.
@@ -106,6 +119,7 @@ export function OrdersPivot({ orders }: { orders: OrderRow[] }) {
       data={orders} // Client mode receives raw rows and pivots/filter/drilldown locally.
       fields={fields}
       defaultPivotModel={defaultPivotModel}
+      formatValue={formatNumber}
       entityName="orders"
       className="theme-${theme}"
     />
@@ -115,10 +129,12 @@ export function OrdersPivot({ orders }: { orders: OrderRow[] }) {
 
 function getServerPivotCode(theme: ThemeMode) {
   return `import { useCallback } from 'react';
-import { PivotTable, type DrillDownRequest, type PaginationState, type PivotFieldConfig, type PivotModel, type SourceFilter } from 'pivot-grid-table';
+import { PivotTable, type DrillDownRequest, type PaginationState, type PivotFieldConfig, type PivotModel, type PivotResult, type SourceFilter } from 'pivot-grid-table';
 import 'pivot-grid-table/styles.css';
 
 ${dataShapeCode}
+
+${formatNumberCode}
 
 interface OrdersPivotApi {
   loadPivot: (request: {
@@ -169,6 +185,7 @@ export function ServerOrdersPivot({ api, fields }: { api: OrdersPivotApi; fields
       fields={fields}
       defaultPivotModel={initialModel}
       deferFilterUpdates
+      formatValue={formatNumber}
       pagination={{
         defaultPageSize: 5,
         pageSizeOptions: [5, 10, 25, 50, 100],
@@ -194,6 +211,8 @@ import 'pivot-grid-table/styles.css';
 
 ${dataShapeCode}
 
+${formatNumberCode}
+
 export function OrdersGrid({ orders }: { orders: OrderRow[] }) {
   // DataGrid is the lower-level grid used by PivotTable; define columns directly here.
   const columns = useMemo<DataGridColumn<OrderRow>[]>(
@@ -207,11 +226,11 @@ export function OrdersGrid({ orders }: { orders: OrderRow[] }) {
         id: 'amount',
         header: 'Amount',
         accessor: 'amount',
-        width: 130,
+        width: 190,
         align: 'right',
         sortable: true,
         valueTone: 'signed',
-        format: (value) => Number(value).toLocaleString('en-US'),
+        format: formatNumber,
       },
     ],
     [],

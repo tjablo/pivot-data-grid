@@ -1,3 +1,4 @@
+import { normalizePivotModel } from './model';
 import type { PivotModel, PivotRequest, SourceFilter } from './types';
 
 export function createPivotRequest(
@@ -6,7 +7,7 @@ export function createPivotRequest(
   options: { limit?: number; offset?: number } = {},
 ): PivotRequest {
   return {
-    model,
+    model: normalizePivotModel(model),
     filters,
     ...options,
   };

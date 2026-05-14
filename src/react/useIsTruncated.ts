@@ -1,5 +1,9 @@
 import { type RefObject, useEffect, useState } from 'react';
 
+export function isElementTruncated(element: HTMLElement): boolean {
+  return element.scrollWidth > element.clientWidth + 1;
+}
+
 export function useIsTruncated<T extends HTMLElement>(elementRef: RefObject<T | null>, value: string): boolean {
   const [isTruncated, setIsTruncated] = useState(false);
 
@@ -11,7 +15,7 @@ export function useIsTruncated<T extends HTMLElement>(elementRef: RefObject<T | 
     }
 
     const updateTruncation = () => {
-      const nextIsTruncated = element.scrollWidth > element.clientWidth + 1;
+      const nextIsTruncated = isElementTruncated(element);
       setIsTruncated((current) => (current === nextIsTruncated ? current : nextIsTruncated));
     };
 

@@ -25,7 +25,10 @@ function getSignedValueTone(value: unknown): DataGridCellTone | null {
 
 export class DataGridModelService {
   getColumnWidth<T extends RowData>(column: DataGridColumn<T>): number {
-    return column.width ?? column.minWidth ?? 160;
+    const baseWidth = column.width ?? column.minWidth ?? 160;
+    const minWidth = column.minWidth ?? 0;
+    const maxWidth = column.maxWidth ?? Number.POSITIVE_INFINITY;
+    return Math.max(minWidth, Math.min(baseWidth, maxWidth));
   }
 
   getCellValue<T extends RowData>(row: T, column: DataGridColumn<T>): unknown {

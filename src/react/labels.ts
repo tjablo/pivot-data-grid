@@ -18,7 +18,12 @@ export interface PivotTableLabels extends DataGridLabels {
   rowField: string;
   columnField: string;
   valueField: string;
+  values: string;
+  addValue: string;
+  removeValue: (index: number) => string;
+  valueFieldAria: (index: number) => string;
   aggregation: string;
+  aggregationAria: (index: number) => string;
   none: string;
   aggregations: Record<AggregationFn, string>;
   filterOperators: Record<FilterOperator, string>;
@@ -83,7 +88,12 @@ export const DEFAULT_PIVOT_TABLE_LABELS: PivotTableLabels = {
   rowField: 'Rows',
   columnField: 'Columns',
   valueField: 'Value',
+  values: 'Values',
+  addValue: 'Add value',
+  removeValue: (index) => `Remove value ${index}`,
+  valueFieldAria: (index) => `Value field ${index}`,
   aggregation: 'Agg',
+  aggregationAria: (index) => `Aggregation ${index}`,
   none: 'None',
   aggregations: {
     sum: 'Sum',

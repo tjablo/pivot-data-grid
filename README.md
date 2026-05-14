@@ -19,6 +19,7 @@ Pivot Grid Table keeps the core data contract portable while providing a practic
 - Client mode: pass raw rows and compute pivot/filter/drilldown locally.
 - Server mode: use managed `getPage` loaders or controlled `pivotResult` props with serializable `PivotModel`, `SourceFilter[]`, pagination, sort, and `DrillDownRequest` contracts.
 - Source filter action menu: users edit filters from a compact toolbar menu while apps keep full control through `filters` and `onFiltersChange`.
+- Multiple value aggregations: configure sum, count, average, min, and max metrics from a compact Values menu.
 - Drill-in navigation: click a metric cell to replace the pivot with matching source rows, then return with Back.
 - Virtualized rows and columns via TanStack Virtual.
 - Built-in pagination with configurable rows-per-page options.
@@ -161,7 +162,11 @@ Built-in UI text is configurable through `labels`. Pass only the keys you want t
   labels={{
     rowField: 'Wiersze',
     columnField: 'Kolumny',
-    valueField: 'Wartość',
+    values: 'Wartości',
+    addValue: 'Dodaj wartość',
+    removeValue: (index) => `Usuń wartość ${index}`,
+    valueFieldAria: (index) => `Pole wartości ${index}`,
+    aggregationAria: (index) => `Agregacja ${index}`,
     sourceFilters: 'Filtry danych',
     addFilter: 'Dodaj filtr',
     recordCount: (filtered, total, entityName) => `${filtered}/${total} ${entityName}`,
@@ -251,8 +256,22 @@ See [Server-side pivot mode](docs/SERVER_SIDE.md) for the backend `PivotResult` 
 | `pagination` | `false` disables pivot pagination, `true` uses defaults, and an object configures pivot page sizes, controlled state, and backend pagination. |
 | `drillDown` | Scoped drilldown behavior: managed `getPage`, `mode`, controlled `rows`, `loading`, `onOpen`, and drilldown-only `pagination`. |
 | `formatValue` | Numeric pivot-value formatter. |
+| `columnSizing` | Width, `minWidth`, and `maxWidth` overrides for generated `row`, `count`, `value`, `total`, and fallback `loading` columns. |
 | `labels` | Overrides built-in text and count formatters. |
 | `className` | Theme scope for CSS token overrides. |
+
+Use `columnSizing` when formatted values need more horizontal space:
+
+```tsx
+<PivotTable
+  data={orders}
+  fields={fields}
+  columnSizing={{
+    value: { minWidth: 220 },
+    total: { minWidth: 240 },
+  }}
+/>
+```
 
 Controlled backend pagination object shape:
 

@@ -76,10 +76,25 @@ describe('DataGrid', () => {
     expect(amountHeader.querySelector('.pg-sort-indicator')).toBeNull();
   });
 
-  it('adds a title tooltip when cell text is truncated', async () => {
+  it('shows a custom tooltip when grid text is truncated', async () => {
+    const longHeader = 'Very long transaction header that should be truncated';
     const longValue = 'Very long transaction identifier that should be truncated';
+    const rightEdgeValue = 'Right edge transaction value that should stay anchored';
     const scrollWidthDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollWidth');
     const clientWidthDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientWidth');
+    const getBoundingClientRect = HTMLElement.prototype.getBoundingClientRect;
+
+    const rect = (left: number, top: number, width: number, height: number): DOMRect => ({
+      x: left,
+      y: top,
+      left,
+      top,
+      width,
+      height,
+      right: left + width,
+      bottom: top + height,
+      toJSON: () => ({}),
+    });
 
     Object.defineProperty(HTMLElement.prototype, 'scrollWidth', {
       configurable: true,
@@ -89,20 +104,59 @@ describe('DataGrid', () => {
       configurable: true,
       get: () => 40,
     });
+    HTMLElement.prototype.getBoundingClientRect = function getTestRect() {
+      if (this.classList.contains('pg-data-grid-shell')) return rect(100, 200, 600, 520);
+      if (this.dataset.gridTooltip === longHeader) return rect(170, 260, 130, 16);
+      if (this.dataset.gridTooltip === longValue) return rect(132, 304, 220, 16);
+      if (this.dataset.gridTooltip === rightEdgeValue) return rect(610, 304, 70, 16);
+      return getBoundingClientRect.call(this);
+    };
 
     try {
       render(
-        <DataGrid rows={[{ id: longValue }]} columns={[{ id: 'id', header: 'ID', accessor: 'id', width: 80 }]} showColumnMenu={false} />,
+        <DataGrid
+          rows={[{ id: longValue, edge: rightEdgeValue }]}
+          columns={[
+            { id: 'id', header: longHeader, accessor: 'id', width: 80 },
+            { id: 'edge', header: 'Edge', accessor: 'edge', width: 80 },
+          ]}
+          showColumnMenu={false}
+        />,
       );
 
+      const header = screen.getByText(longHeader).closest('.pg-header-label');
       const content = screen.getByText(longValue).closest('.pg-grid-cell-content');
-      await waitFor(() => expect(content).toHaveAttribute('title', longValue));
+      await waitFor(() => expect(header).toHaveAttribute('data-truncated', 'true'));
+      await waitFor(() => expect(content).toHaveAttribute('data-truncated', 'true'));
+      expect(header).not.toHaveAttribute('title');
+      expect(content).not.toHaveAttribute('title');
+
+      fireEvent.mouseMove(screen.getByText(longHeader));
+      const headerTooltip = await screen.findByRole('tooltip');
+      expect(headerTooltip).toHaveTextContent(longHeader);
+      expect(headerTooltip).toHaveStyle({ left: '70px', top: '52px', maxWidth: '420px' });
+      expect(headerTooltip).toHaveAttribute('data-placement', 'top');
+      expect(headerTooltip).toHaveAttribute('data-align', 'left');
+
+      fireEvent.mouseLeave(screen.getByRole('grid'));
+      await waitFor(() => expect(screen.queryByRole('tooltip')).not.toBeInTheDocument());
+
+      fireEvent.mouseMove(screen.getByText(longValue));
+      expect(await screen.findByRole('tooltip')).toHaveTextContent(longValue);
+
+      fireEvent.mouseMove(screen.getByText(rightEdgeValue));
+      const rightTooltip = await screen.findByRole('tooltip');
+      expect(rightTooltip).toHaveTextContent(rightEdgeValue);
+      expect(rightTooltip).toHaveStyle({ left: '580px', top: '96px', maxWidth: '420px' });
+      expect(rightTooltip).toHaveAttribute('data-align', 'right');
     } finally {
       if (scrollWidthDescriptor) Object.defineProperty(HTMLElement.prototype, 'scrollWidth', scrollWidthDescriptor);
       else delete (HTMLElement.prototype as { scrollWidth?: number }).scrollWidth;
 
       if (clientWidthDescriptor) Object.defineProperty(HTMLElement.prototype, 'clientWidth', clientWidthDescriptor);
       else delete (HTMLElement.prototype as { clientWidth?: number }).clientWidth;
+
+      HTMLElement.prototype.getBoundingClientRect = getBoundingClientRect;
     }
   });
 
@@ -188,9 +242,83 @@ describe('PivotTable', () => {
     await waitFor(() => expect(writeText).toHaveBeenCalledWith('200'));
     fireEvent.click(amountCell);
 
-    expect(await screen.findByRole('region', { name: 'Drilldown rows' })).toBeInTheDocument();
+    const drilldown = await screen.findByRole('region', { name: 'Drilldown rows' });
+    const drilldownGrid = within(drilldown).getByRole('grid');
     expect(screen.getByRole('heading', { name: 'Product: Laptop / Region: AMER' })).toBeInTheDocument();
-    expect(screen.getAllByRole('gridcell', { name: 'AMER' })).not.toHaveLength(0);
+    expect(within(drilldownGrid).queryByRole('columnheader', { name: 'Product' })).not.toBeInTheDocument();
+    expect(within(drilldownGrid).queryByRole('columnheader', { name: 'Region' })).not.toBeInTheDocument();
+    expect(within(drilldownGrid).queryByRole('gridcell', { name: 'Laptop' })).not.toBeInTheDocument();
+    expect(within(drilldownGrid).queryByRole('gridcell', { name: 'AMER' })).not.toBeInTheDocument();
+    expect(within(drilldownGrid).getByRole('gridcell', { name: '200' })).toBeInTheDocument();
+  });
+
+  it('renders and edits multiple value aggregations from the toolbar', async () => {
+    render(
+      <PivotTable
+        data={rows}
+        fields={fields}
+        defaultPivotModel={{
+          rows: ['product'],
+          columns: ['region'],
+          values: [
+            { field: 'amount', aggFunc: 'sum' },
+            { field: 'amount', aggFunc: 'min' },
+            { field: 'amount', aggFunc: 'avg' },
+          ],
+        }}
+        entityName="orders"
+        pagination={false}
+      />,
+    );
+
+    expect(screen.getByRole('columnheader', { name: 'AMER (Sum)' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'AMER (Min)' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'AMER (Avg)' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Total (Avg)' })).toBeInTheDocument();
+    expect(screen.getByText('Amount - Sum')).toBeInTheDocument();
+    expect(screen.getByText('+2')).toBeInTheDocument();
+
+    const valuesTrigger = screen.getByRole('button', { name: 'Values' });
+    valuesTrigger.focus();
+    fireEvent.keyDown(valuesTrigger, { key: 'Enter', code: 'Enter' });
+
+    expect(screen.getByLabelText('Value field 3')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add value' }));
+
+    expect(screen.getByLabelText('Value field 4')).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'AMER (Count)' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove value 2' }));
+
+    expect(screen.queryByLabelText('Value field 4')).not.toBeInTheDocument();
+    expect(screen.queryByRole('columnheader', { name: 'AMER (Min)' })).not.toBeInTheDocument();
+  });
+
+  it('applies generated pivot column sizing', () => {
+    render(
+      <PivotTable
+        data={rows}
+        fields={fields}
+        defaultPivotModel={{
+          rows: ['product'],
+          columns: ['region'],
+          values: [{ field: 'amount', aggFunc: 'sum' }],
+        }}
+        columnSizing={{
+          row: { minWidth: 210 },
+          count: { minWidth: 120 },
+          value: { minWidth: 220 },
+          total: { minWidth: 240 },
+        }}
+        pagination={false}
+      />,
+    );
+
+    expect(screen.getByRole('columnheader', { name: 'Product' })).toHaveStyle({ width: '210px' });
+    expect(screen.getByRole('columnheader', { name: '#' })).toHaveStyle({ width: '120px' });
+    expect(screen.getByRole('columnheader', { name: 'AMER' })).toHaveStyle({ width: '220px' });
+    expect(screen.getByRole('columnheader', { name: 'Total' })).toHaveStyle({ width: '240px' });
   });
 
   it('renders a client-side pivot skeleton while raw rows are loading', async () => {
@@ -357,8 +485,12 @@ describe('PivotTable', () => {
     const grid = screen.getByRole('grid');
     fireEvent.click(within(grid).getAllByRole('gridcell', { name: '200' })[0]);
 
-    expect(await screen.findByRole('region', { name: 'Drilldown rows' })).toBeInTheDocument();
-    expect(screen.getAllByRole('gridcell', { name: 'AMER' })).not.toHaveLength(0);
+    const drilldown = await screen.findByRole('region', { name: 'Drilldown rows' });
+    const drilldownGrid = within(drilldown).getByRole('grid');
+    expect(within(drilldownGrid).queryByRole('columnheader', { name: 'Product' })).not.toBeInTheDocument();
+    expect(within(drilldownGrid).queryByRole('columnheader', { name: 'Region' })).not.toBeInTheDocument();
+    expect(within(drilldownGrid).queryByRole('gridcell', { name: 'AMER' })).not.toBeInTheDocument();
+    expect(within(drilldownGrid).getByRole('gridcell', { name: '200' })).toBeInTheDocument();
   });
 
   it('can disable drilldown through the scoped drillDown mode', () => {
@@ -577,7 +709,9 @@ describe('PivotTable', () => {
     const drilldown = await screen.findByRole('region', { name: 'Drilldown rows' });
     const grid = within(drilldown).getByRole('grid');
     expect(screen.getByText('Page 1 of 3 (3 rows)')).toBeInTheDocument();
-    expect(within(grid).getByRole('gridcell', { name: 'Monitor' })).toBeInTheDocument();
+    expect(within(grid).queryByRole('columnheader', { name: 'Product' })).not.toBeInTheDocument();
+    expect(within(grid).queryByRole('columnheader', { name: 'Region' })).not.toBeInTheDocument();
+    expect(within(grid).getByRole('gridcell', { name: '50' })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
     expect(handleDrillDownPageChange).toHaveBeenCalledWith(

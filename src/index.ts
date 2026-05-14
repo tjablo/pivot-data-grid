@@ -2,6 +2,7 @@ export { EMPTY_VALUE_LABEL, getNestedValue, stringifyValue } from './core/access
 export { createDrillDownRequestFromCell, getDrillDownRows } from './core/drilldown';
 export { autoDetectFields, buildDefaultModel, normalizeFields } from './core/fields';
 export { applySourceFilters } from './core/filters';
+export { normalizePivotModel, normalizePivotValues } from './core/model';
 export {
   getPivotTotalColumnId,
   getPivotValueColumnId,
@@ -52,6 +53,8 @@ export {
 } from './react/labels';
 export { PivotTable } from './react/PivotTable';
 export type {
+  PivotTableColumnSize,
+  PivotTableColumnSizing,
   PivotTableDrillDownControlledOptions,
   PivotTableDrillDownGetPage,
   PivotTableDrillDownGetPageArgs,

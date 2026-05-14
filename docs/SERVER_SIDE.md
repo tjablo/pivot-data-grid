@@ -61,6 +61,8 @@ type PivotModel = {
 };
 ```
 
+Value configs are unique by `{ field, aggFunc }`. `PivotTable` normalizes duplicate pairs before calling a managed `getPage` loader, and `createPivotRequest` applies the same normalization. Backends should treat duplicate pairs as invalid or ignored rather than as separate metrics, because generated result keys use the same `${field}:${aggFunc}` suffix.
+
 `PivotResult.rows` is the rendered group list. Every row should include:
 
 - `id`: stable row id for React keys. Use any deterministic id that is unique within the returned page/result.

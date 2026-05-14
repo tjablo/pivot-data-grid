@@ -61,8 +61,9 @@ export function DrillDownPanel({
   labels,
   onClose,
 }: DrillDownPanelProps) {
+  const scopedFields = new Set([...Object.keys(request.rowValues), ...Object.keys(request.columnValues ?? {})]);
   const columns: DataGridColumn<RowData>[] = fields
-    .filter((field) => field.role !== 'filter-only')
+    .filter((field) => field.role !== 'filter-only' && !scopedFields.has(field.field))
     .slice(0, 12)
     .map((field) => ({
       id: field.field,
