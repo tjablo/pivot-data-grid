@@ -2,7 +2,7 @@ import { ArrowLeft } from 'lucide-react';
 import { getNestedValue } from '../core/access';
 import type { DrillDownRequest, PivotFieldConfig, RowData } from '../core/types';
 import { DataGrid } from './DataGrid';
-import type { DataGridColumn, PaginationMode, PaginationState } from './DataGrid.types';
+import type { DataGridColumn, PaginationMode, PaginationState, SortMode, SortState } from './DataGrid.types';
 import type { PivotTableLabels } from './labels';
 
 interface DrillDownPanelProps {
@@ -20,6 +20,9 @@ interface DrillDownPanelProps {
   paginationState?: PaginationState;
   totalRows?: number;
   onPaginationChange?: (state: PaginationState) => void;
+  sortMode?: SortMode;
+  sortState?: SortState | null;
+  onSortStateChange?: (state: SortState | null) => void;
   labels: PivotTableLabels;
   onClose: () => void;
 }
@@ -52,6 +55,9 @@ export function DrillDownPanel({
   paginationState,
   totalRows,
   onPaginationChange,
+  sortMode,
+  sortState,
+  onSortStateChange,
   labels,
   onClose,
 }: DrillDownPanelProps) {
@@ -94,6 +100,9 @@ export function DrillDownPanel({
         paginationState={paginationState}
         totalRows={totalRows}
         onPaginationChange={onPaginationChange}
+        sortMode={sortMode}
+        sortState={sortState}
+        onSortStateChange={onSortStateChange}
         labels={labels}
         toolbarContent={
           <div className="pg-drilldown-toolbar">

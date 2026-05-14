@@ -19,6 +19,15 @@ const fields: PivotFieldConfig[] = [
   { field: 'orderedAt', label: 'Ordered at', role: 'filter-only', type: 'date' },
 ];
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((next) => {
+    resolve = next;
+  });
+
+  return { promise, resolve };
+}
+
 describe('DataGrid', () => {
   it('renders rows, allows copyable cells, and sorts when a sortable header is clicked', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
@@ -184,7 +193,30 @@ describe('PivotTable', () => {
     expect(screen.getAllByRole('gridcell', { name: 'AMER' })).not.toHaveLength(0);
   });
 
-  it('updates pivot controls and source filters', () => {
+  it('renders a client-side pivot skeleton while raw rows are loading', async () => {
+    const { container } = render(
+      <PivotTable
+        data={[]}
+        fields={fields}
+        defaultPivotModel={{
+          rows: ['product'],
+          columns: ['region'],
+          values: [{ field: 'amount', aggFunc: 'sum' }],
+        }}
+        loading
+        entityName="orders"
+        pagination={false}
+      />,
+    );
+
+    await waitFor(() => expect(container.querySelectorAll('.pg-grid-skeleton-cell').length).toBeGreaterThan(0));
+    expect(screen.getByRole('grid')).toHaveAttribute('aria-busy', 'true');
+    expect(screen.getByRole('columnheader', { name: 'Product' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Total' })).toBeInTheDocument();
+    expect(screen.queryByText('No data available for the selected pivot configuration.')).not.toBeInTheDocument();
+  });
+
+  it('updates pivot controls and applies source filters when the menu closes', async () => {
     render(
       <PivotTable
         data={rows}
@@ -212,10 +244,19 @@ describe('PivotTable', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Add filter' }));
     fireEvent.change(screen.getByLabelText('Filter value from'), { target: { value: '2026-01-01' } });
     fireEvent.change(screen.getByLabelText('Filter value to'), { target: { value: '2026-01-02' } });
-    expect(screen.getByText('2 / 3 orders')).toBeInTheDocument();
+    expect(screen.getByText('3 orders')).toBeInTheDocument();
+
+    fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape', code: 'Escape' });
+    expect(await screen.findByText('2 / 3 orders')).toBeInTheDocument();
+
+    filterTrigger.focus();
+    fireEvent.keyDown(filterTrigger, { key: 'Enter', code: 'Enter' });
 
     fireEvent.click(screen.getByRole('button', { name: 'Remove filter' }));
     expect(screen.queryByLabelText('Filter value from')).not.toBeInTheDocument();
+
+    fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape', code: 'Escape' });
+    expect(await screen.findByText('3 orders')).toBeInTheDocument();
   });
 
   it('uses label overrides for built-in UI text', () => {
@@ -293,14 +334,12 @@ describe('PivotTable', () => {
     await waitFor(() => expect(screen.getByLabelText('Filter value from')).toHaveValue('2026-01-03'));
   });
 
-  it('uses server mode drilldown rows returned from drillDown.onLoad', async () => {
+  it('uses controlled server mode drilldown rows', async () => {
     const pivotResult = pivotData(rows, {
       rows: ['product'],
       columns: ['region'],
       values: [{ field: 'amount', aggFunc: 'sum' }],
     });
-    const loadDrillDownRows = vi.fn().mockResolvedValue([rows[1]]);
-
     render(
       <PivotTable
         pivotResult={pivotResult}
@@ -310,7 +349,7 @@ describe('PivotTable', () => {
           columns: ['region'],
           values: [{ field: 'amount', aggFunc: 'sum' }],
         }}
-        drillDown={{ onLoad: loadDrillDownRows }}
+        drillDown={{ rows: [rows[1]] }}
         entityName="orders"
       />,
     );
@@ -318,7 +357,6 @@ describe('PivotTable', () => {
     const grid = screen.getByRole('grid');
     fireEvent.click(within(grid).getAllByRole('gridcell', { name: '200' })[0]);
 
-    await waitFor(() => expect(loadDrillDownRows).toHaveBeenCalledTimes(1));
     expect(await screen.findByRole('region', { name: 'Drilldown rows' })).toBeInTheDocument();
     expect(screen.getAllByRole('gridcell', { name: 'AMER' })).not.toHaveLength(0);
   });
@@ -386,6 +424,122 @@ describe('PivotTable', () => {
     expect(onPaginationChange).toHaveBeenCalledWith({ pageIndex: 1, pageSize: 1 });
   });
 
+  it('loads managed backend pivot pages and requests server sorting', async () => {
+    const model: PivotModel = {
+      rows: ['product'],
+      columns: ['region'],
+      values: [{ field: 'amount', aggFunc: 'sum' }],
+    };
+    const apiRows = [...rows, { product: 'Phone', region: 'APAC', amount: 80, orderedAt: '2026-01-04' }];
+    const getPage = vi.fn(async ({ model, page, sort }) => {
+      const fullResult = pivotData(apiRows, model);
+      const sortedRows = sort
+        ? [...fullResult.rows].sort((left, right) => {
+            const direction = sort.direction === 'asc' ? 1 : -1;
+            return String(left[sort.columnId]).localeCompare(String(right[sort.columnId])) * direction;
+          })
+        : fullResult.rows;
+
+      return {
+        result: {
+          ...fullResult,
+          rows: sortedRows.slice(page.pageIndex * page.pageSize, page.pageIndex * page.pageSize + page.pageSize),
+          totalSourceRecords: apiRows.length,
+          filteredSourceRecords: apiRows.length,
+        },
+        totalRows: fullResult.rows.length,
+      };
+    });
+
+    render(
+      <PivotTable
+        getPage={getPage}
+        fields={fields}
+        pivotModel={model}
+        entityName="orders"
+        pagination={{
+          defaultPageSize: 1,
+          pageSizeOptions: [1, 2],
+        }}
+      />,
+    );
+
+    expect(await screen.findByText('Page 1 of 3 (3 rows)')).toBeInTheDocument();
+    expect(getPage).toHaveBeenLastCalledWith(expect.objectContaining({ page: { pageIndex: 0, pageSize: 1 }, sort: null }));
+    expect(within(screen.getByRole('grid')).getByRole('gridcell', { name: 'Laptop' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+    await waitFor(() => expect(getPage).toHaveBeenLastCalledWith(expect.objectContaining({ page: { pageIndex: 1, pageSize: 1 } })));
+    expect(await within(screen.getByRole('grid')).findByRole('gridcell', { name: 'Monitor' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('columnheader', { name: /Product/ }));
+    await waitFor(() =>
+      expect(getPage).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          page: { pageIndex: 0, pageSize: 1 },
+          sort: { columnId: 'product', direction: 'asc' },
+        }),
+      ),
+    );
+  });
+
+  it('waits until the filter menu closes before loading a managed backend filter page', async () => {
+    const model: PivotModel = {
+      rows: ['product'],
+      columns: ['region'],
+      values: [{ field: 'amount', aggFunc: 'sum' }],
+    };
+    const getPage = vi.fn(async ({ model, filters }) => {
+      const filteredRows =
+        filters.length > 0 ? rows.filter((row) => String(row.orderedAt) >= '2026-01-01' && String(row.orderedAt) <= '2026-01-02') : rows;
+      const result = pivotData(filteredRows, model);
+      return {
+        result,
+        totalRows: result.rows.length,
+      };
+    });
+
+    render(<PivotTable getPage={getPage} fields={fields} pivotModel={model} entityName="orders" pagination={false} />);
+
+    await waitFor(() => expect(getPage).toHaveBeenCalled());
+    const callsBeforeFilterEdit = getPage.mock.calls.length;
+
+    const filterTrigger = screen.getByRole('button', { name: 'Source data filters' });
+    filterTrigger.focus();
+    fireEvent.keyDown(filterTrigger, { key: 'Enter', code: 'Enter' });
+    fireEvent.click(screen.getByRole('button', { name: 'Add filter' }));
+    fireEvent.change(screen.getByLabelText('Filter value from'), { target: { value: '2026-01-01' } });
+    fireEvent.change(screen.getByLabelText('Filter value to'), { target: { value: '2026-01-02' } });
+
+    expect(getPage).toHaveBeenCalledTimes(callsBeforeFilterEdit);
+
+    fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape', code: 'Escape' });
+
+    await waitFor(() => expect(getPage).toHaveBeenCalledTimes(callsBeforeFilterEdit + 1));
+    expect(getPage).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        filters: [expect.objectContaining({ field: 'orderedAt', value: '2026-01-01', valueTo: '2026-01-02' })],
+      }),
+    );
+  });
+
+  it('renders a pivot skeleton while the initial managed backend page is loading', async () => {
+    const model: PivotModel = {
+      rows: ['product'],
+      columns: ['region'],
+      values: [{ field: 'amount', aggFunc: 'sum' }],
+    };
+    const getPage = vi.fn(() => new Promise<never>(() => undefined));
+    const { container } = render(
+      <PivotTable getPage={getPage} fields={fields} pivotModel={model} entityName="orders" pagination={false} />,
+    );
+
+    await waitFor(() => expect(container.querySelectorAll('.pg-grid-skeleton-cell').length).toBeGreaterThan(0));
+    expect(screen.getByRole('grid')).toHaveAttribute('aria-busy', 'true');
+    expect(screen.getByRole('columnheader', { name: 'Product' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Total' })).toBeInTheDocument();
+  });
+
   it('supports backend pagination for server-mode drilldown rows', async () => {
     const pivotResult = pivotData(rows, {
       rows: ['product'],
@@ -434,5 +588,74 @@ describe('PivotTable', () => {
         valueField: 'amount',
       }),
     );
+  });
+
+  it('loads managed backend drilldown pages and ignores stale drilldown responses', async () => {
+    const pivotResult = pivotData(rows, {
+      rows: ['product'],
+      columns: ['region'],
+      values: [{ field: 'amount', aggFunc: 'sum' }],
+    });
+    const firstRequest = deferred<{ rows: RowData[]; totalRows: number }>();
+    const secondRequest = deferred<{ rows: RowData[]; totalRows: number }>();
+    const thirdRequest = deferred<{ rows: RowData[]; totalRows: number }>();
+    const getPage = vi
+      .fn()
+      .mockReturnValueOnce(firstRequest.promise)
+      .mockReturnValueOnce(secondRequest.promise)
+      .mockReturnValueOnce(thirdRequest.promise);
+
+    render(
+      <PivotTable
+        pivotResult={pivotResult}
+        fields={fields}
+        pivotModel={{
+          rows: ['product'],
+          columns: ['region'],
+          values: [{ field: 'amount', aggFunc: 'sum' }],
+        }}
+        entityName="orders"
+        pagination={false}
+        drillDown={{
+          mode: 'inline',
+          getPage,
+          pagination: {
+            defaultPageSize: 1,
+            pageSizeOptions: [1, 2],
+          },
+        }}
+      />,
+    );
+
+    const pivotGrid = screen.getByRole('grid');
+    fireEvent.click(within(pivotGrid).getAllByRole('gridcell', { name: '200' })[0]);
+    await waitFor(() => expect(getPage).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(within(pivotGrid).getAllByRole('gridcell', { name: '100' })[0]);
+    await waitFor(() => expect(getPage).toHaveBeenCalledTimes(2));
+    expect(getPage).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        page: { pageIndex: 0, pageSize: 1 },
+        request: expect.objectContaining({
+          rowValues: { product: 'Laptop' },
+          columnValues: { region: 'EMEA' },
+          valueField: 'amount',
+        }),
+      }),
+    );
+
+    firstRequest.resolve({ rows: [rows[1]], totalRows: 2 });
+    secondRequest.resolve({ rows: [rows[0]], totalRows: 2 });
+
+    const drilldown = await screen.findByRole('region', { name: 'Drilldown rows' });
+    await waitFor(() => expect(within(drilldown).getByRole('gridcell', { name: '100' })).toBeInTheDocument());
+    expect(within(drilldown).queryByRole('gridcell', { name: '200' })).not.toBeInTheDocument();
+
+    fireEvent.click(within(drilldown).getByRole('button', { name: 'Next page' }));
+    await waitFor(() => expect(getPage).toHaveBeenCalledTimes(3));
+    expect(getPage).toHaveBeenLastCalledWith(expect.objectContaining({ page: { pageIndex: 1, pageSize: 1 } }));
+
+    thirdRequest.resolve({ rows: [rows[1]], totalRows: 2 });
+    await waitFor(() => expect(within(drilldown).getByRole('gridcell', { name: '200' })).toBeInTheDocument());
   });
 });

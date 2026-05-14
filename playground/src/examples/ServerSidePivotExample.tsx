@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 
 import {
   applySourceFilters,
@@ -18,7 +18,6 @@ import type { ThemeMode } from '../types';
 interface ServerSidePivotExampleProps {
   orders: RowData[];
   theme: ThemeMode;
-  active: boolean;
 }
 
 interface ApiPageRequest {
@@ -68,9 +67,22 @@ const INITIAL_PIVOT_PAGE: PaginationState = { pageIndex: 0, pageSize: 5 };
 const INITIAL_DRILL_DOWN_PAGE: PaginationState = { pageIndex: 0, pageSize: 25 };
 const PAGE_SIZE_OPTIONS = [5, 10, 25, 50, 100];
 
-function delay(ms: number) {
-  return new Promise((resolve) => {
-    window.setTimeout(resolve, ms);
+function delay(ms: number, signal?: AbortSignal) {
+  return new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new DOMException('Aborted', 'AbortError'));
+      return;
+    }
+
+    const timeoutId = window.setTimeout(resolve, ms);
+    signal?.addEventListener(
+      'abort',
+      () => {
+        window.clearTimeout(timeoutId);
+        reject(new DOMException('Aborted', 'AbortError'));
+      },
+      { once: true },
+    );
   });
 }
 
@@ -92,8 +104,8 @@ function getPagedRows<T>(rows: T[], page: ApiPageRequest): { rows: T[]; page: Ap
   };
 }
 
-async function fetchPivotFromApi(orders: RowData[], request: PivotApiRequest): Promise<PivotApiResponse> {
-  await delay(420);
+async function fetchPivotFromApi(orders: RowData[], request: PivotApiRequest, signal?: AbortSignal): Promise<PivotApiResponse> {
+  await delay(420, signal);
   const filtered = applySourceFilters(orders, request.filters);
   const fullResult = pivotData(filtered, request.model);
   const pagedRows = getPagedRows(fullResult.rows, request.page);
@@ -109,65 +121,31 @@ async function fetchPivotFromApi(orders: RowData[], request: PivotApiRequest): P
   };
 }
 
-async function fetchDrillDownFromApi(orders: RowData[], request: DrillDownApiRequest): Promise<DrillDownApiResponse> {
-  await delay(350);
+async function fetchDrillDownFromApi(orders: RowData[], request: DrillDownApiRequest, signal?: AbortSignal): Promise<DrillDownApiResponse> {
+  await delay(350, signal);
   const filtered = applySourceFilters(orders, request.filters);
   const rows = getDrillDownRows(filtered, request.drillDown);
   return getPagedRows(rows, request.page);
 }
 
-export function ServerSidePivotExample({ orders, theme, active }: ServerSidePivotExampleProps) {
-  const [serverModel, setServerModel] = useState<PivotModel>(defaultPivotModel);
-  const [serverFilters, setServerFilters] = useState<SourceFilter[]>([]);
-  const [pivotPage, setPivotPage] = useState<PaginationState>(INITIAL_PIVOT_PAGE);
-  const [pivotResponse, setPivotResponse] = useState<PivotApiResponse | null>(null);
-  const [serverLoading, setServerLoading] = useState(false);
-  const [activeDrillDown, setActiveDrillDown] = useState<DrillDownRequest | null>(null);
-  const [drillDownPage, setDrillDownPage] = useState<PaginationState>(INITIAL_DRILL_DOWN_PAGE);
-  const [drillDownResponse, setDrillDownResponse] = useState<DrillDownApiResponse | null>(null);
-  const [isDrillDownFetching, setIsDrillDownFetching] = useState(false);
+export function ServerSidePivotExample({ orders, theme }: ServerSidePivotExampleProps) {
   const [lastExchange, setLastExchange] = useState<ApiExchange | null>(null);
 
-  const updateServerModel = useCallback((model: PivotModel) => {
-    setServerModel(model);
-    setPivotPage((current) => ({ ...current, pageIndex: 0 }));
-    setActiveDrillDown(null);
-    setDrillDownResponse(null);
-  }, []);
+  const loadPivotPage = useCallback(
+    async ({
+      model,
+      filters,
+      page,
+      signal,
+    }: {
+      model: PivotModel;
+      filters: SourceFilter[];
+      page: PaginationState;
+      signal: AbortSignal;
+    }) => {
+      const request: PivotApiRequest = { model, filters, page };
+      const response = await fetchPivotFromApi(orders, request, signal);
 
-  const updateServerFilters = useCallback((filters: SourceFilter[]) => {
-    setServerFilters(filters);
-    setPivotPage((current) => ({ ...current, pageIndex: 0 }));
-    setActiveDrillDown(null);
-    setDrillDownResponse(null);
-  }, []);
-
-  const openServerDrillDown = useCallback((request: DrillDownRequest) => {
-    setActiveDrillDown(request);
-    setDrillDownPage((current) => ({ pageIndex: 0, pageSize: current.pageSize }));
-    setDrillDownResponse(null);
-  }, []);
-
-  const changeDrillDownPage = useCallback((state: PaginationState, request: DrillDownRequest) => {
-    setActiveDrillDown(request);
-    setDrillDownPage(state);
-  }, []);
-
-  useEffect(() => {
-    if (!active) return undefined;
-
-    let cancelled = false;
-    const request: PivotApiRequest = {
-      model: serverModel,
-      filters: serverFilters,
-      page: pivotPage,
-    };
-
-    setServerLoading(true);
-    fetchPivotFromApi(orders, request).then((response) => {
-      if (cancelled) return;
-      setPivotResponse(response);
-      setServerLoading(false);
       setLastExchange({
         endpoint: 'GET /api/pivot',
         request,
@@ -178,71 +156,63 @@ export function ServerSidePivotExample({ orders, theme, active }: ServerSidePivo
           filteredSourceRecords: response.result.filteredSourceRecords,
         },
       });
-    });
 
-    return () => {
-      cancelled = true;
-    };
-  }, [active, orders, pivotPage, serverFilters, serverModel]);
+      return {
+        result: response.result,
+        totalRows: response.page.totalRows,
+      };
+    },
+    [orders],
+  );
 
-  useEffect(() => {
-    if (!active || !activeDrillDown) return undefined;
+  const loadDrillDownPage = useCallback(
+    async ({
+      request,
+      filters,
+      page,
+      signal,
+    }: {
+      request: DrillDownRequest;
+      filters: SourceFilter[];
+      page: PaginationState;
+      signal: AbortSignal;
+    }) => {
+      const apiRequest: DrillDownApiRequest = { drillDown: request, filters, page };
+      const response = await fetchDrillDownFromApi(orders, apiRequest, signal);
 
-    let cancelled = false;
-    const request: DrillDownApiRequest = {
-      drillDown: activeDrillDown,
-      filters: serverFilters,
-      page: drillDownPage,
-    };
-
-    setIsDrillDownFetching(true);
-    fetchDrillDownFromApi(orders, request).then((response) => {
-      if (cancelled) return;
-      setDrillDownResponse(response);
-      setIsDrillDownFetching(false);
       setLastExchange({
         endpoint: 'GET /api/pivot/drilldown',
-        request,
+        request: apiRequest,
         response: {
           page: response.page,
           rowsReturned: response.rows.length,
         },
       });
-    });
 
-    return () => {
-      cancelled = true;
-    };
-  }, [active, activeDrillDown, drillDownPage, orders, serverFilters]);
+      return {
+        rows: response.rows,
+        totalRows: response.page.totalRows,
+      };
+    },
+    [orders],
+  );
 
   return (
     <>
       <PivotTable
-        pivotResult={pivotResponse?.result ?? null}
+        getPage={loadPivotPage}
         fields={fields}
-        pivotModel={serverModel}
-        onPivotModelChange={updateServerModel}
-        filters={serverFilters}
-        onFiltersChange={updateServerFilters}
-        loading={serverLoading}
+        defaultPivotModel={defaultPivotModel}
         deferFilterUpdates
         entityName="orders"
         pagination={{
-          mode: 'server',
-          state: pivotPage,
-          totalRows: pivotResponse?.page.totalRows ?? 0,
-          onChange: setPivotPage,
+          defaultPageSize: INITIAL_PIVOT_PAGE.pageSize,
           pageSizeOptions: PAGE_SIZE_OPTIONS,
         }}
         drillDown={{
-          onOpen: openServerDrillDown,
-          rows: drillDownResponse?.rows ?? [],
-          loading: isDrillDownFetching,
+          getPage: loadDrillDownPage,
           pagination: {
-            mode: 'server',
-            state: drillDownPage,
-            totalRows: drillDownResponse?.page.totalRows ?? 0,
-            onChange: changeDrillDownPage,
+            defaultPageSize: INITIAL_DRILL_DOWN_PAGE.pageSize,
             pageSizeOptions: PAGE_SIZE_OPTIONS,
           },
         }}

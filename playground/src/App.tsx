@@ -22,7 +22,7 @@ export function App() {
 
       <section className="workspace">
         {view === 'client' ? <ClientSidePivotExample orders={orders} theme={theme} /> : null}
-        {view === 'server' ? <ServerSidePivotExample orders={orders} theme={theme} active={view === 'server'} /> : null}
+        {view === 'server' ? <ServerSidePivotExample orders={orders} theme={theme} /> : null}
         {view === 'grid' ? <DataGridExample orders={orders} theme={theme} /> : null}
       </section>
 

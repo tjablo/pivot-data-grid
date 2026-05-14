@@ -79,10 +79,6 @@ export interface DrillDownRequest {
   rowValues: Record<string, string>;
   columnValues?: Record<string, string>;
   valueField?: string;
-  rowField?: string;
-  rowValue?: string;
-  colField?: string;
-  colValue?: string;
 }
 
 export interface PivotRequest {

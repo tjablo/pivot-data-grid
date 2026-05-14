@@ -40,6 +40,7 @@ export type {
   PaginationMode,
   PaginationState,
   SortDirection,
+  SortMode,
   SortState,
 } from './react/DataGrid.types';
 export type { DataGridLabelOverrides, DataGridLabels, PivotTableLabelOverrides, PivotTableLabels } from './react/labels';
@@ -51,8 +52,18 @@ export {
 } from './react/labels';
 export { PivotTable } from './react/PivotTable';
 export type {
+  PivotTableDrillDownControlledOptions,
+  PivotTableDrillDownGetPage,
+  PivotTableDrillDownGetPageArgs,
+  PivotTableDrillDownGetPageResult,
+  PivotTableDrillDownManagedOptions,
   PivotTableDrillDownOptions,
   PivotTableDrillDownPaginationOptions,
+  PivotTableGetPage,
+  PivotTableGetPageArgs,
+  PivotTableGetPageResult,
+  PivotTableManagedPaginationOptions,
+  PivotTableManagedServerProps,
   PivotTablePaginationMode,
   PivotTablePaginationOptions,
   PivotTableProps,

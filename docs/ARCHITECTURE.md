@@ -23,7 +23,7 @@ Primary exports:
 - `getDrillDownRows`: local drilldown extraction.
 - `createPivotRequest`: serializable backend request helper.
 - Default and resolved label exports for UI localization.
-- Type exports for `PivotModel`, `PivotResult`, `SourceFilter`, `DrillDownRequest`, value tone configuration, and label overrides.
+- Type exports for `PivotModel`, `PivotResult`, `SourceFilter`, `DrillDownRequest`, managed page loaders, value tone configuration, and label overrides.
 
 ## Client Mode
 
@@ -37,7 +37,24 @@ The package auto-detects fields when explicit fields are not supplied, applies s
 
 ## Server Mode
 
-Server mode receives a pre-computed result:
+Server mode supports a recommended managed loader and a lower-level controlled escape hatch.
+
+Managed server mode receives a `getPage` callback:
+
+```tsx
+<PivotTable
+  fields={fields}
+  defaultPivotModel={model}
+  getPage={({ model, filters, page, sort, signal }) => loadPivotPage({ model, filters, page, sort, signal })}
+  drillDown={{
+    getPage: ({ request, filters, page, sort, signal }) => loadDrillDownPage({ request, filters, page, sort, signal }),
+  }}
+/>
+```
+
+`PivotTable` owns page state, loading state, total row counts, server sort state, and stale-response protection in this mode. The backend returns the current pivot page as `PivotResult` plus total pivot group count. Drilldown returns the current source-row page plus total source-row count.
+
+Controlled server mode receives a pre-computed result:
 
 ```tsx
 <PivotTable
@@ -47,17 +64,31 @@ Server mode receives a pre-computed result:
   onPivotModelChange={setModel}
   filters={filters}
   onFiltersChange={setFilters}
+  pagination={{
+    mode: 'server',
+    state: pivotPage,
+    totalRows: totalPivotRows,
+    onChange: setPivotPage,
+  }}
   drillDown={{
-    onLoad: loadRows,
+    onOpen: setActiveDrillDown,
+    rows: drillDownRows,
+    loading: isDrillDownLoading,
+    pagination: {
+      mode: 'server',
+      state: drillDownPage,
+      totalRows: totalDrillDownRows,
+      onChange: setDrillDownPage,
+    },
   }}
 />
 ```
 
-The frontend emits `PivotModel`, `SourceFilter[]`, and `DrillDownRequest`. The backend owns query planning, database aggregation, permissions, row limits, and result caching.
+The frontend emits `PivotModel`, `SourceFilter[]`, pagination state, sort state, and `DrillDownRequest`. The backend owns query planning, database aggregation, permissions, row limits, and result caching.
 
 ## Source Filters
 
-`PivotTable` renders source filters in a toolbar action menu. The menu is presentation only: it edits the same serializable `SourceFilter[]` contract used by client mode and server mode. Client mode applies filters locally with `applySourceFilters`; server mode should send the updated filters to the backend alongside the current `PivotModel`.
+`PivotTable` renders source filters in a toolbar action menu. The menu is presentation only: it edits the same serializable `SourceFilter[]` contract used by client mode and server mode. Filter edits are drafted while the menu is open and committed when the menu closes, which prevents local recomputation or backend requests on every keystroke. Consumers can pass `deferFilterUpdates={false}` to opt into immediate updates. Client mode applies committed filters locally with `applySourceFilters`; server mode sends committed filters to the backend alongside the current `PivotModel`.
 
 Fields marked as `role: 'filter-only'` are kept out of row/value pivot controls but remain available to source filters. When a filter-only field is present, the Add filter action prefers it as the initial filter target. Date fields use the package date picker built on Radix Popover and the existing `between` operator as an inclusive date range (`value` as start, `valueTo` as end). The same `SourceFilter[]` payload can be sent to a backend without UI-specific state.
 
@@ -73,7 +104,7 @@ The default drill-in view replaces the pivot grid in place and provides a Back a
 - matched column dimension values when the clicked cell belongs to a pivot column;
 - the clicked value field when available.
 
-Client mode filters source rows locally. Server mode scopes all drilldown behavior under `drillDown`: use `drillDown.onLoad` for a loader, or pass controlled `drillDown.rows` and `drillDown.loading` when another data layer owns fetching.
+Client mode filters source rows locally. Managed server mode uses `drillDown.getPage` for first page, page changes, page-size changes, and sort changes. Controlled server mode can still pass `drillDown.rows`, `drillDown.loading`, and `drillDown.pagination` when another data layer owns fetching.
 
 ## Virtualization
 
@@ -81,11 +112,15 @@ Client mode filters source rows locally. Server mode scopes all drilldown behavi
 
 ## Sorting And Pagination
 
-Sortable columns cycle through ascending, descending, and unsorted states. The unsorted state does not render a sort icon, which keeps inactive headers visually quiet. `DataGrid` exposes controlled `sortState` / `onSortStateChange` for consumers that need to keep sort state outside the component.
+Sortable columns cycle through ascending, descending, and unsorted states. The unsorted state does not render a sort icon, which keeps inactive headers visually quiet. `DataGrid` exposes controlled `sortState` / `onSortStateChange` for consumers that need to keep sort state outside the component. `sortMode="server"` updates sort state without sorting the received rows locally.
 
 `DataGrid` also owns the shared pagination UI. It supports local pagination by slicing rows, controlled pagination through `paginationState` / `onPaginationChange`, and `paginationMode="server"` for backend-fed pages where the consumer passes already-paged rows plus `totalRows`. `PivotTable` enables pagination by default for pivot and drilldown grids. Use `pagination={false}` for the pivot grid and `drillDown={{ pagination: false }}` for the source-row drilldown grid.
 
-In server mode, `PivotTable` passes backend pagination through to `DataGrid` from scoped objects. Use `pagination.mode: 'server'` when the backend returns only the current page in `PivotResult.rows`; `pagination.totalRows` represents the full number of pivot groups. Use `drillDown.pagination.mode: 'server'` when source-row drilldown pages are fetched independently from pivot-row pages.
+When `PivotTable` is loading before a first server result exists, it builds fallback pivot columns from the current model so `DataGrid` can render skeleton rows instead of a blank body.
+
+In managed server mode, `PivotTable` forces server pagination and server sorting internally and calls `getPage` with zero-based `PaginationState`. Use `totalRows` in loader results so the component can derive page count after page-size changes.
+
+In controlled server mode, `PivotTable` passes backend pagination through to `DataGrid` from scoped objects. Use `pagination.mode: 'server'` when the backend returns only the current page in `PivotResult.rows`; `pagination.totalRows` represents the full number of pivot groups. Use `drillDown.pagination.mode: 'server'` when source-row drilldown pages are fetched independently from pivot-row pages.
 
 ## Cell Selection And Copy
 
@@ -110,6 +145,5 @@ Runtime styling is plain CSS, scoped under `.pg-root`, and controlled by `--pg-*
 1. Harden accessibility with roving focus and full WAI-ARIA grid keyboard navigation.
 2. Add column resizing and advanced row/column pinning controls.
 3. Add multi-row and multi-column group display with expandable hierarchy.
-4. Add first-class backend pagination helpers for drilldown query planning.
-5. Add E2E visual tests for large datasets and mobile layouts.
-6. Add integration guides for Next.js, Vite, and backend SQL query planning.
+4. Add E2E visual tests for large datasets and mobile layouts.
+5. Add integration guides for Next.js, Vite, and backend SQL query planning.

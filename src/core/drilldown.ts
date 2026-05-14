@@ -13,11 +13,8 @@ export function createDrillDownRequestFromCell(
   columnId: string,
 ): DrillDownRequest | null {
   const rowValues = rowValuesFromPivotRow(model, row);
-  const firstRowField = model.rows[0];
   const base: DrillDownRequest = {
     rowValues,
-    rowField: firstRowField,
-    rowValue: firstRowField ? rowValues[firstRowField] : undefined,
   };
 
   if (columnId === '_count') return base;
@@ -32,14 +29,11 @@ export function createDrillDownRequestFromCell(
 
   const column = result.columns.find((candidate) => candidate.id === parsed.columnKey);
   if (!column) return null;
-  const firstColumnField = model.columns[0];
 
   return {
     ...base,
     columnValues: column.values,
     valueField: parsed.valueField,
-    colField: firstColumnField,
-    colValue: firstColumnField ? column.values[firstColumnField] : undefined,
   };
 }
 

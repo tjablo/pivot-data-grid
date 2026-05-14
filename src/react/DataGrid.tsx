@@ -222,6 +222,7 @@ export function DataGrid<T extends RowData>({
   initialHiddenColumnIds = [],
   sortState,
   onSortStateChange,
+  sortMode = 'client',
   onCellClick,
   toolbarContent,
   skeletonRowCount = 9,
@@ -254,11 +255,12 @@ export function DataGrid<T extends RowData>({
     pageSize: normalizePageSize(defaultPaginationState?.pageSize, normalizedPageSizeOptions),
   }));
   const activeSort = sortState === undefined ? internalSort : sortState;
+  const isServerSort = sortMode === 'server';
 
   const visibleColumns = useMemo(() => columns.filter((column) => !hiddenColumnIds.has(column.id)), [columns, hiddenColumnIds]);
 
   const sortedRows = useMemo(() => {
-    if (!activeSort) return rows;
+    if (!activeSort || isServerSort) return rows;
     const sortColumn = columns.find((column) => column.id === activeSort.columnId);
     if (!sortColumn) return rows;
 
@@ -266,7 +268,7 @@ export function DataGrid<T extends RowData>({
       const direction = activeSort.direction === 'asc' ? 1 : -1;
       return compareValues(getCellValue(left, sortColumn), getCellValue(right, sortColumn)) * direction;
     });
-  }, [activeSort, columns, rows]);
+  }, [activeSort, columns, isServerSort, rows]);
 
   const activePagination = paginationState ?? internalPagination;
   const isServerPagination = paginationMode === 'server';

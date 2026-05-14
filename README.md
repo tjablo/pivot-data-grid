@@ -17,7 +17,7 @@ Source repository: https://github.com/tjablo/pivot-data-grid
 Pivot Grid Table keeps the core data contract portable while providing a practical React UI for analytics and finance workflows:
 
 - Client mode: pass raw rows and compute pivot/filter/drilldown locally.
-- Server mode: pass a backend `pivotResult` and use serializable `PivotModel`, `SourceFilter[]`, and `DrillDownRequest` contracts.
+- Server mode: use managed `getPage` loaders or controlled `pivotResult` props with serializable `PivotModel`, `SourceFilter[]`, pagination, sort, and `DrillDownRequest` contracts.
 - Source filter action menu: users edit filters from a compact toolbar menu while apps keep full control through `filters` and `onFiltersChange`.
 - Drill-in navigation: click a metric cell to replace the pivot with matching source rows, then return with Back.
 - Virtualized rows and columns via TanStack Virtual.
@@ -78,7 +78,7 @@ export function OrdersPivot({ rows }: { rows: Record<string, unknown>[] }) {
 />
 ```
 
-Use `PivotTable` `pagination.mode: 'client'` when the component should slice rows locally. Use `pagination.mode: 'server'` when your API already returns the current page and the component should use `totalRows` only to render page controls. `DataGrid` exposes the same choice as `paginationMode`.
+Use `PivotTable` `pagination.mode: 'client'` when the component should slice rows locally. In controlled server mode, use `pagination.mode: 'server'` when your API already returns the current page and the component should use `totalRows` only to render page controls. In managed server mode with `getPage`, omit `mode`; the component switches to server pagination internally. `DataGrid` exposes the same choice as `paginationMode`.
 
 ## Copyable Cells
 
@@ -148,6 +148,8 @@ Date fields use a package date picker built on Radix Popover, not the browser-na
 { id: 'orderedAt-range', field: 'orderedAt', operator: 'between', value: '2026-01-01', valueTo: '2026-01-31' }
 ```
 
+Filter edits are drafted while the source filter menu is open and applied when the menu closes. This prevents a backend `getPage` loader from firing on every keystroke while a user is still editing a range or text value. Pass `deferFilterUpdates={false}` only when you explicitly want every filter edit to update `filters` immediately.
+
 ## Localization
 
 Built-in UI text is configurable through `labels`. Pass only the keys you want to override:
@@ -168,81 +170,91 @@ Built-in UI text is configurable through `labels`. Pass only the keys you want t
 />
 ```
 
-## Server Mode
+## Client-Side Mode
 
-Use the same model and filters as request payloads for your API. The backend returns `PivotResult`; the component renders it without receiving raw source data.
-The built-in filter menu edits the same `SourceFilter[]` array that you pass to your backend.
+Use client-side mode when the browser already has the complete, authorized source rows for the current analysis. `PivotTable` receives `data`, filters rows locally, computes the pivot locally, and opens drilldown rows from the same in-memory dataset.
 
 ```tsx
-const [model, setModel] = useState(defaultPivotModel);
-const [filters, setFilters] = useState([]);
-const [pivotPage, setPivotPage] = useState({ pageIndex: 0, pageSize: 25 });
-const [activeDrillDown, setActiveDrillDown] = useState(null);
-const [drillDownPage, setDrillDownPage] = useState({ pageIndex: 0, pageSize: 25 });
-const { pivotResult, totalPivotRows, isFetching } = usePivotApi({
-  model,
-  filters,
-  page: pivotPage,
-});
-const { rows: drillDownPageRows, totalRows: totalDrillDownRows, isFetching: isDrillDownFetching } = useDrillDownApi({
-  request: activeDrillDown,
-  filters,
-  page: drillDownPage,
-});
-
 <PivotTable
-  pivotResult={pivotResult}
+  data={orders}
   fields={fields}
-  pivotModel={model}
-  onPivotModelChange={setModel}
-  filters={filters}
-  onFiltersChange={setFilters}
-  loading={isFetching}
+  defaultPivotModel={defaultPivotModel}
+  entityName="orders"
+/>
+```
+
+See [Client-side pivot mode](docs/CLIENT_SIDE.md) for pagination, drilldown, and controlled UI-state examples.
+
+## Server-Side Mode
+
+Use server-side mode when the backend owns aggregation, permissions, row limits, or query planning. The recommended path is managed `getPage`: the component calls your loader on initial load, model/filter changes, page changes, page-size changes, and server sort changes.
+
+```tsx
+<PivotTable
+  fields={fields}
+  defaultPivotModel={defaultPivotModel}
+  getPage={async ({ model, filters, page, sort, signal }) => {
+    const response = await api.fetchPivot({ model, filters, page, sort, signal });
+    return {
+      result: response.pivotResult,
+      totalRows: response.totalPivotGroups,
+    };
+  }}
   pagination={{
-    mode: 'server',
-    state: pivotPage,
-    onChange: setPivotPage,
-    totalRows: totalPivotRows,
+    defaultPageSize: 25,
+    pageSizeOptions: [10, 25, 50, 100],
   }}
   drillDown={{
-    onOpen: setActiveDrillDown,
-    rows: drillDownPageRows,
-    loading: isDrillDownFetching,
+    getPage: async ({ request, filters, page, sort, signal }) => {
+      const response = await api.fetchDrilldown({
+        rowValues: request.rowValues,
+        columnValues: request.columnValues,
+        valueField: request.valueField,
+        filters,
+        page,
+        sort,
+        signal,
+      });
+
+      return {
+        rows: response.data,
+        totalRows: response.totalRows,
+      };
+    },
     pagination: {
-      mode: 'server',
-      state: drillDownPage,
-      totalRows: totalDrillDownRows,
-      onChange: (state, request) => {
-        setActiveDrillDown(request);
-        setDrillDownPage(state);
-      },
+      defaultPageSize: 25,
+      pageSizeOptions: [25, 50, 100],
     },
   }}
   entityName="transactions"
 />;
 ```
 
-For backend-fed pivot pages, set `pagination.mode` to `server`, return only the current page in `pivotResult.rows`, and pass the total number of pivot groups through `pagination.totalRows`. `PivotTable` will keep the page controls in sync without slicing the already-paged rows again.
+`page.pageIndex` is zero-based. Return `totalRows` from loaders; the component derives page count and keeps the page controls in sync. Pass `signal` to `fetch` or your request layer so stale requests can be aborted.
+
+See [Server-side pivot mode](docs/SERVER_SIDE.md) for controlled mode, backend drilldown pagination, sorting, and when to use each API style.
 
 ## PivotTable Props
 
-`PivotTable` supports client mode with raw `data` and server mode with a backend-computed `pivotResult`. The most important props are grouped by responsibility:
+`PivotTable` supports client mode with raw `data`, managed server mode with `getPage`, and controlled server mode with a backend-computed `pivotResult`. The most important props are grouped by responsibility:
 
 | Prop | Purpose |
 | --- | --- |
 | `data` | Client-mode source rows. When set, filtering, pivoting, and drilldown run in the browser. |
-| `pivotResult` | Server-mode pivot result. In backend pagination, pass only the current page in `pivotResult.rows`. |
+| `getPage` | Recommended managed server-mode pivot loader. Receives `model`, `filters`, zero-based `page`, `sort`, and `signal`; returns `{ result, totalRows }`. |
+| `pivotResult` | Controlled server-mode pivot result. In backend pagination, pass only the current page in `pivotResult.rows`. |
 | `fields` | Field metadata for labels, roles, filters, copy buttons, value tones, and drilldown columns. Required in server mode. |
 | `defaultPivotModel` | Initial uncontrolled pivot model. |
 | `pivotModel` / `onPivotModelChange` | Controlled pivot model for apps that keep row/column/value selection in external state. |
 | `filters` / `onFiltersChange` | Controlled source filters shared by client and server mode. |
+| `deferFilterUpdates` | Keeps source filter menu edits local until the menu closes. Defaults to `true`. |
 | `pagination` | `false` disables pivot pagination, `true` uses defaults, and an object configures pivot page sizes, controlled state, and backend pagination. |
-| `drillDown` | Scoped drilldown behavior: `mode`, `onOpen`, `onLoad`, controlled `rows`, `loading`, and drilldown-only `pagination`. |
+| `drillDown` | Scoped drilldown behavior: managed `getPage`, `mode`, controlled `rows`, `loading`, `onOpen`, and drilldown-only `pagination`. |
 | `formatValue` | Numeric pivot-value formatter. |
 | `labels` | Overrides built-in text and count formatters. |
 | `className` | Theme scope for CSS token overrides. |
 
-Pagination object shape:
+Controlled backend pagination object shape:
 
 ```tsx
 <PivotTable
@@ -270,6 +282,8 @@ Pagination object shape:
 ```
 
 `mode` defaults to `client`. Set it to `server` only when your backend already applied `state.pageIndex` and `state.pageSize` and the component should render the rows exactly as received. `drillDown.pagination` is separate because pivot groups and drilldown source rows are often fetched by different endpoints.
+
+`drillDown.onOpen` is a notification hook for controlled integrations. For data loading, use managed `drillDown.getPage` or controlled `drillDown.rows` plus `drillDown.pagination`.
 
 ## Styling
 
@@ -318,6 +332,8 @@ The local playground runs at `http://127.0.0.1:5173/` and includes client pivot 
 ## Documentation
 
 - [Architecture](docs/ARCHITECTURE.md)
+- [Client-side pivot mode](docs/CLIENT_SIDE.md)
+- [Server-side pivot mode](docs/SERVER_SIDE.md)
 - [Changelog](CHANGELOG.md)
 - [Styling strategy](docs/STYLING.md)
 - [Publishing](docs/PUBLISHING.md)

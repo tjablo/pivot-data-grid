@@ -9,6 +9,8 @@ export interface SortState {
   direction: SortDirection;
 }
 
+export type SortMode = 'client' | 'server';
+
 export interface PaginationState {
   pageIndex: number;
   pageSize: number;
@@ -60,6 +62,12 @@ export interface DataGridProps<T extends RowData = RowData> {
   initialHiddenColumnIds?: string[];
   sortState?: SortState | null;
   onSortStateChange?: (sortState: SortState | null) => void;
+  /**
+   * Controls where sorting is applied.
+   * `client` sorts the rows passed to the grid.
+   * `server` updates sort state and renders the rows exactly as received.
+   */
+  sortMode?: SortMode;
   onCellClick?: (args: { row: T; rowIndex: number; column: DataGridColumn<T>; value: unknown }) => void;
   toolbarContent?: ReactNode;
   skeletonRowCount?: number;

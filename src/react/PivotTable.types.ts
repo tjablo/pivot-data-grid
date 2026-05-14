@@ -1,8 +1,17 @@
 import type { DrillDownRequest, PivotFieldConfig, PivotModel, PivotResult, RowData, SourceFilter } from '../core/types';
-import type { PaginationMode, PaginationState } from './DataGrid.types';
+import type { PaginationMode, PaginationState, SortState } from './DataGrid.types';
 import type { PivotTableLabelOverrides } from './labels';
 
 export type PivotTablePaginationMode = PaginationMode;
+
+export interface PivotTableManagedPaginationOptions {
+  /** Enables the managed backend pagination control. Defaults to true. */
+  enabled?: boolean;
+  /** Initial page size for managed backend pagination. */
+  defaultPageSize?: number;
+  /** Page-size choices shown in the pagination control. */
+  pageSizeOptions?: number[];
+}
 
 export interface PivotTableDrillDownPaginationOptions {
   /** Enables pagination for the drilldown source-row grid. Defaults to true. */
@@ -46,20 +55,69 @@ export interface PivotTablePaginationOptions {
   onChange?: (state: PaginationState) => void;
 }
 
-export interface PivotTableDrillDownOptions {
+export interface PivotTableGetPageArgs {
+  model: PivotModel;
+  filters: SourceFilter[];
+  /** Zero-based page state. UI labels render this as one-based page numbers. */
+  page: PaginationState;
+  sort: SortState | null;
+  signal: AbortSignal;
+}
+
+export interface PivotTableGetPageResult {
+  result: PivotResult;
+  /** Total backend pivot groups matching the current model and filters. */
+  totalRows: number;
+}
+
+export type PivotTableGetPage = (args: PivotTableGetPageArgs) => PivotTableGetPageResult | Promise<PivotTableGetPageResult>;
+
+export interface PivotTableDrillDownGetPageArgs {
+  request: DrillDownRequest;
+  filters: SourceFilter[];
+  /** Zero-based page state. UI labels render this as one-based page numbers. */
+  page: PaginationState;
+  sort: SortState | null;
+  signal: AbortSignal;
+}
+
+export interface PivotTableDrillDownGetPageResult {
+  rows: RowData[];
+  /** Total source rows matching the active drilldown request. */
+  totalRows: number;
+}
+
+export type PivotTableDrillDownGetPage = (
+  args: PivotTableDrillDownGetPageArgs,
+) => PivotTableDrillDownGetPageResult | Promise<PivotTableDrillDownGetPageResult>;
+
+interface PivotTableDrillDownBaseOptions {
   /** Determines whether drilldown replaces the pivot, renders below it, or is disabled. */
   mode?: 'replace' | 'inline' | 'none';
   /** Called when a metric cell creates a drilldown request, before rows are loaded. */
   onOpen?: (request: DrillDownRequest) => void;
-  /** Server-mode drilldown loader. Return rows synchronously, asynchronously, or manage rows with `rows`. */
-  onLoad?: (request: DrillDownRequest) => undefined | RowData[] | Promise<RowData[]>;
-  /** Controlled drilldown rows, usually supplied after `onLoad` fetches from a backend. */
+}
+
+export interface PivotTableDrillDownManagedOptions extends PivotTableDrillDownBaseOptions {
+  /** Managed backend drilldown loader. Called on open, page changes, page-size changes, and sort changes. */
+  getPage: PivotTableDrillDownGetPage;
+  rows?: never;
+  loading?: never;
+  /** Pagination settings for the managed drilldown source-row grid. */
+  pagination?: boolean | PivotTableManagedPaginationOptions;
+}
+
+export interface PivotTableDrillDownControlledOptions extends PivotTableDrillDownBaseOptions {
+  getPage?: never;
+  /** Controlled drilldown rows, usually supplied by an external data layer. */
   rows?: RowData[];
   /** Loading state for controlled drilldown rows. */
   loading?: boolean;
   /** Pagination settings for the drilldown source-row grid. */
   pagination?: boolean | PivotTableDrillDownPaginationOptions;
 }
+
+export type PivotTableDrillDownOptions = PivotTableDrillDownManagedOptions | PivotTableDrillDownControlledOptions;
 
 interface PivotTableBaseProps {
   /** Shows a loading state over the pivot grid while external data is being fetched. */
@@ -78,7 +136,7 @@ interface PivotTableBaseProps {
   entityName?: string;
   /** Formats numeric pivot values. Receives the numeric value and generated pivot column id. */
   formatValue?: (value: number | null, columnId: string) => string;
-  /** Keeps filter input edits local until the user applies them from the filter menu. */
+  /** Keeps filter menu edits local until the menu closes. Defaults to true. */
   deferFilterUpdates?: boolean;
   /** Additional class applied to the `.pg-root` wrapper for theme scoping. */
   className?: string;
@@ -88,8 +146,6 @@ interface PivotTableBaseProps {
   drillDown?: PivotTableDrillDownOptions;
   /** Number of leading columns pinned while scrolling horizontally. */
   frozenColumnCount?: number;
-  /** Pagination settings. Pass `false` to disable, `true` for defaults, or an object for controlled/backend pagination. */
-  pagination?: boolean | PivotTablePaginationOptions;
   /** Overrides built-in UI labels and count formatters. */
   labels?: PivotTableLabelOverrides;
 }
@@ -98,16 +154,33 @@ export interface PivotTableClientProps extends PivotTableBaseProps {
   /** Raw source rows. When present, `PivotTable` runs filtering, pivoting, and drilldown locally. */
   data: RowData[];
   pivotResult?: never;
+  getPage?: never;
   /** Optional field metadata. If omitted, fields are inferred from `data`. */
   fields?: PivotFieldConfig[];
+  /** Pagination settings. Pass `false` to disable, `true` for defaults, or an object for client/controlled pagination. */
+  pagination?: boolean | PivotTablePaginationOptions;
 }
 
 export interface PivotTableServerProps extends PivotTableBaseProps {
   data?: never;
+  getPage?: never;
   /** Backend-computed pivot result. In server pagination mode, `rows` should contain only the current page. */
   pivotResult: PivotResult | null | undefined;
   /** Field metadata required for toolbar labels, roles, filters, and drilldown columns. */
   fields: PivotFieldConfig[];
+  /** Pagination settings. Pass `false` to disable, `true` for defaults, or an object for controlled/backend pagination. */
+  pagination?: boolean | PivotTablePaginationOptions;
 }
 
-export type PivotTableProps = PivotTableClientProps | PivotTableServerProps;
+export interface PivotTableManagedServerProps extends PivotTableBaseProps {
+  data?: never;
+  pivotResult?: never;
+  /** Managed backend pivot loader. Called on mount, model/filter changes, page changes, page-size changes, and sort changes. */
+  getPage: PivotTableGetPage;
+  /** Field metadata required for toolbar labels, roles, filters, and drilldown columns. */
+  fields: PivotFieldConfig[];
+  /** Pagination settings for the managed backend pivot grid. */
+  pagination?: boolean | PivotTableManagedPaginationOptions;
+}
+
+export type PivotTableProps = PivotTableClientProps | PivotTableServerProps | PivotTableManagedServerProps;

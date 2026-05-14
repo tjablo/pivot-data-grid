@@ -1,15 +1,16 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { autoDetectFields, buildDefaultModel } from '../core/fields';
 import { getPivotTotalColumnId, getPivotValueColumnId } from '../core/pivot';
 import type { PivotFieldConfig, PivotModel, PivotResult, PivotRow, RowData } from '../core/types';
 import { DataGrid } from './DataGrid';
-import type { DataGridColumn, PaginationState } from './DataGrid.types';
+import type { DataGridColumn, PaginationState, SortState } from './DataGrid.types';
 import { DrillDownPanel } from './DrillDownPanel';
 import { type PivotTableLabels, resolvePivotTableLabels } from './labels';
 import type { PivotTableProps } from './PivotTable.types';
 import { PivotToolbar } from './PivotToolbar';
 import { PortalContainerContext } from './portalContext';
 import { useControllableState } from './useControllableState';
+import { useManagedPivotPage } from './useManagedPivotPage';
 import { usePivotData } from './usePivotData';
 import { usePivotDrillDown } from './usePivotDrillDown';
 import { usePivotPagination } from './usePivotPagination';
@@ -96,6 +97,67 @@ function buildColumns(
   return columns;
 }
 
+function buildLoadingColumns(
+  model: PivotModel,
+  fields: PivotFieldConfig[],
+  labels: PivotTableLabels,
+  formatValue?: (value: number | null, columnId: string) => string,
+): DataGridColumn<PivotRow>[] {
+  const isSingleValue = model.values.length === 1;
+  const columns: DataGridColumn<PivotRow>[] = model.rows.map((rowField) => {
+    const field = fields.find((candidate) => candidate.field === rowField);
+    return {
+      id: rowField,
+      header: field?.label ?? rowField,
+      accessor: rowField,
+      width: 180,
+      sortable: true,
+      copyable: field?.copyable,
+      valueTone: field?.valueTone,
+    };
+  });
+
+  columns.push({
+    id: '_count',
+    header: labels.countColumn,
+    accessor: '_count',
+    width: 92,
+    align: 'right',
+    sortable: true,
+    className: 'pg-metric-cell',
+    format: (value) => formatNumber(value, formatValue, '_count'),
+  });
+
+  for (const valueConfig of model.values) {
+    const valueField = fields.find((field) => field.field === valueConfig.field);
+    const suffix = isSingleValue ? valueConfig.field : `${valueConfig.field}:${valueConfig.aggFunc}`;
+    const id = getPivotTotalColumnId(suffix);
+    const fieldLabel = valueField?.label ?? valueConfig.field;
+    columns.push({
+      id,
+      header: isSingleValue ? labels.totalColumn : labels.totalColumnWithValue(fieldLabel),
+      accessor: id,
+      width: 148,
+      align: 'right',
+      sortable: true,
+      className: 'pg-metric-cell',
+      copyable: valueField?.copyable,
+      valueTone: valueField?.valueTone,
+      format: (value) => formatNumber(value, formatValue, id),
+    });
+  }
+
+  if (columns.length === 0) {
+    columns.push({
+      id: '__loading__',
+      header: labels.loading,
+      width: 160,
+    });
+  }
+
+  return columns;
+}
+
 export function PivotTable(props: PivotTableProps) {
   const {
     loading = false,
@@ -115,6 +177,24 @@ export function PivotTable(props: PivotTableProps) {
   } = props;
   const drillDownViewMode = drillDownOptions?.mode ?? 'replace';
   const { pivot: pivotPagination, drillDown: drillDownPagination } = usePivotPagination(props.pagination, drillDownOptions?.pagination);
+  const hasManagedPivotLoader = 'getPage' in props && typeof props.getPage === 'function';
+  const managedPivotGetPage = hasManagedPivotLoader ? props.getPage : undefined;
+  const drillDownGetPage = drillDownOptions && 'getPage' in drillDownOptions ? drillDownOptions.getPage : undefined;
+  const drillDownRows = drillDownOptions && 'rows' in drillDownOptions ? drillDownOptions.rows : undefined;
+  const drillDownLoading = drillDownOptions && 'loading' in drillDownOptions ? drillDownOptions.loading : undefined;
+  const [managedPivotPage, setManagedPivotPage] = useState<PaginationState>({
+    pageIndex: 0,
+    pageSize: pivotPagination.defaultPageSize,
+  });
+  const [managedPivotSort, setManagedPivotSort] = useState<SortState | null>(null);
+
+  useEffect(() => {
+    setManagedPivotPage((current) =>
+      current.pageSize === pivotPagination.defaultPageSize
+        ? current
+        : { pageIndex: current.pageIndex, pageSize: pivotPagination.defaultPageSize },
+    );
+  }, [pivotPagination.defaultPageSize]);
 
   const labels = useMemo(() => resolvePivotTableLabels(labelOverrides), [labelOverrides]);
   const resolvedEntityName = entityName ?? labels.entityName;
@@ -129,24 +209,71 @@ export function PivotTable(props: PivotTableProps) {
     setPortalContainer(node);
   }, []);
 
+  const resetManagedPivotPage = useCallback(() => {
+    if (!hasManagedPivotLoader) return;
+    setManagedPivotPage((current) => ({ pageIndex: 0, pageSize: current.pageSize }));
+    setManagedPivotSort(null);
+  }, [hasManagedPivotLoader]);
+
+  const handleModelChange = useCallback(
+    (nextModel: PivotModel) => {
+      setModel(nextModel);
+      resetManagedPivotPage();
+    },
+    [resetManagedPivotPage, setModel],
+  );
+
+  const handleFiltersChange = useCallback(
+    (nextFilters: typeof sourceFilters) => {
+      setSourceFilters(nextFilters);
+      resetManagedPivotPage();
+    },
+    [resetManagedPivotPage, setSourceFilters],
+  );
+
+  const handleManagedPivotPageChange = useCallback((state: PaginationState) => {
+    setManagedPivotPage(state);
+  }, []);
+
+  const handleManagedPivotSortChange = useCallback((sort: SortState | null) => {
+    setManagedPivotSort(sort);
+    setManagedPivotPage((current) => ({ pageIndex: 0, pageSize: current.pageSize }));
+  }, []);
+
+  const managedPivot = useManagedPivotPage({
+    enabled: hasManagedPivotLoader,
+    getPage: managedPivotGetPage,
+    model,
+    filters: sourceFilters,
+    page: managedPivotPage,
+    sort: managedPivotSort,
+  });
+
   const { filteredData, result } = usePivotData({
     clientMode,
     sourceData,
     sourceFilters,
     model,
-    serverResult: clientMode ? null : props.pivotResult,
+    serverResult: clientMode ? null : hasManagedPivotLoader ? managedPivot.result : 'pivotResult' in props ? props.pivotResult : null,
   });
+  const pivotTotalRows = hasManagedPivotLoader ? managedPivot.totalRows : pivotPagination.totalRows;
   const groupCount =
-    pivotPagination.mode === 'server' ? (pivotPagination.totalRows ?? result?.rows.length ?? 0) : (result?.rows.length ?? 0);
+    hasManagedPivotLoader || pivotPagination.mode === 'server' ? (pivotTotalRows ?? result?.rows.length ?? 0) : (result?.rows.length ?? 0);
   const stats = {
     total: result?.totalSourceRecords ?? sourceData.length,
     filtered: result?.filteredSourceRecords ?? filteredData.length,
     groups: groupCount,
   };
+  const isPivotLoading = loading || managedPivot.loading;
 
   const columns = useMemo(
-    () => (result ? buildColumns(result, model, fields, labels, formatValue) : []),
-    [fields, formatValue, labels, model, result],
+    () =>
+      result
+        ? buildColumns(result, model, fields, labels, formatValue)
+        : isPivotLoading
+          ? buildLoadingColumns(model, fields, labels, formatValue)
+          : [],
+    [fields, formatValue, isPivotLoading, labels, model, result],
   );
 
   const drillDown = usePivotDrillDown({
@@ -156,9 +283,10 @@ export function PivotTable(props: PivotTableProps) {
     filteredData,
     sourceFilters,
     onOpen: drillDownOptions?.onOpen,
-    onLoad: drillDownOptions?.onLoad,
-    controlledRows: drillDownOptions?.rows,
-    controlledLoading: drillDownOptions?.loading,
+    getPage: drillDownGetPage,
+    defaultPageSize: drillDownPagination.defaultPageSize,
+    controlledRows: drillDownRows,
+    controlledLoading: drillDownLoading,
   });
   const handleDrillDownPaginationChange = useCallback(
     (state: PaginationState) => {
@@ -168,6 +296,8 @@ export function PivotTable(props: PivotTableProps) {
     [drillDown.activeRequest, drillDownPagination.onChange],
   );
   const activeDrillDown = drillDown.activeRequest;
+  const activeDrillDownManagedPagination = drillDown.managedPagination;
+  const activeDrillDownSort = drillDown.sort;
   const hasResult = result && result.rows.length > 0;
   const emptyMessage =
     clientMode && sourceData.length > 0 && filteredData.length === 0 ? labels.noMatchingRecords(resolvedEntityName) : labels.noPivotData;
@@ -184,9 +314,9 @@ export function PivotTable(props: PivotTableProps) {
         <PivotToolbar
           fields={fields}
           model={model}
-          onModelChange={setModel}
+          onModelChange={handleModelChange}
           filters={sourceFilters}
-          onFiltersChange={setSourceFilters}
+          onFiltersChange={handleFiltersChange}
           labels={labels}
           deferFilterUpdates={deferFilterUpdates}
         />
@@ -203,10 +333,13 @@ export function PivotTable(props: PivotTableProps) {
             pagination={drillDownPagination.enabled}
             defaultPageSize={drillDownPagination.defaultPageSize}
             pageSizeOptions={drillDownPagination.pageSizeOptions}
-            paginationMode={drillDownPagination.mode}
-            paginationState={drillDownPagination.state}
-            totalRows={drillDownPagination.totalRows}
-            onPaginationChange={handleDrillDownPaginationChange}
+            paginationMode={activeDrillDownManagedPagination ? 'server' : drillDownPagination.mode}
+            paginationState={activeDrillDownManagedPagination?.state ?? drillDownPagination.state}
+            totalRows={activeDrillDownManagedPagination?.totalRows ?? drillDownPagination.totalRows}
+            onPaginationChange={activeDrillDownManagedPagination?.onChange ?? handleDrillDownPaginationChange}
+            sortMode={activeDrillDownSort ? 'server' : undefined}
+            sortState={activeDrillDownSort?.state}
+            onSortStateChange={activeDrillDownSort?.onChange}
             labels={labels}
             onClose={drillDown.close}
           />
@@ -217,7 +350,7 @@ export function PivotTable(props: PivotTableProps) {
               columns={columns}
               className="pg-pivot-grid"
               height={height}
-              loading={loading}
+              loading={isPivotLoading}
               getRowId={(row) => row.id}
               emptyMessage={emptyMessage}
               onCellClick={drillDownViewMode === 'none' ? undefined : drillDown.open}
@@ -225,10 +358,13 @@ export function PivotTable(props: PivotTableProps) {
               pagination={pivotPagination.enabled}
               defaultPaginationState={{ pageSize: pivotPagination.defaultPageSize }}
               pageSizeOptions={pivotPagination.pageSizeOptions}
-              paginationMode={pivotPagination.mode}
-              paginationState={pivotPagination.state}
-              totalRows={pivotPagination.totalRows}
-              onPaginationChange={pivotPagination.onChange}
+              paginationMode={hasManagedPivotLoader ? 'server' : pivotPagination.mode}
+              paginationState={hasManagedPivotLoader ? managedPivotPage : pivotPagination.state}
+              totalRows={pivotTotalRows}
+              onPaginationChange={hasManagedPivotLoader ? handleManagedPivotPageChange : pivotPagination.onChange}
+              sortMode={hasManagedPivotLoader ? 'server' : undefined}
+              sortState={hasManagedPivotLoader ? managedPivotSort : undefined}
+              onSortStateChange={hasManagedPivotLoader ? handleManagedPivotSortChange : undefined}
               toolbarContent={pivotStats}
               labels={labels}
             />
@@ -247,10 +383,13 @@ export function PivotTable(props: PivotTableProps) {
             pagination={drillDownPagination.enabled}
             defaultPageSize={drillDownPagination.defaultPageSize}
             pageSizeOptions={drillDownPagination.pageSizeOptions}
-            paginationMode={drillDownPagination.mode}
-            paginationState={drillDownPagination.state}
-            totalRows={drillDownPagination.totalRows}
-            onPaginationChange={handleDrillDownPaginationChange}
+            paginationMode={activeDrillDownManagedPagination ? 'server' : drillDownPagination.mode}
+            paginationState={activeDrillDownManagedPagination?.state ?? drillDownPagination.state}
+            totalRows={activeDrillDownManagedPagination?.totalRows ?? drillDownPagination.totalRows}
+            onPaginationChange={activeDrillDownManagedPagination?.onChange ?? handleDrillDownPaginationChange}
+            sortMode={activeDrillDownSort ? 'server' : undefined}
+            sortState={activeDrillDownSort?.state}
+            onSortStateChange={activeDrillDownSort?.onChange}
             labels={labels}
             onClose={drillDown.close}
           />

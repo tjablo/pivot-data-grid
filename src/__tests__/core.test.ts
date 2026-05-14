@@ -99,12 +99,8 @@ describe('drilldown', () => {
 
     expect(request).toEqual({
       rowValues: { product: 'Laptop' },
-      rowField: 'product',
-      rowValue: 'Laptop',
       columnValues: { region: 'AMER' },
       valueField: 'amount',
-      colField: 'region',
-      colValue: 'AMER',
     });
     expect(request).toBeDefined();
     if (!request) throw new Error('Drilldown request not created');

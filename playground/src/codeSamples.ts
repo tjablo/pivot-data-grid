@@ -114,17 +114,8 @@ export function OrdersPivot({ orders }: { orders: OrderRow[] }) {
 }
 
 function getServerPivotCode(theme: ThemeMode) {
-  return `import { useCallback, useEffect, useState } from 'react';
-import {
-  PivotTable,
-  type DrillDownRequest,
-  type PaginationState,
-  type PivotFieldConfig,
-  type PivotModel,
-  type PivotResult,
-  type RowData,
-  type SourceFilter,
-} from 'pivot-grid-table';
+  return `import { useCallback } from 'react';
+import { PivotTable, type DrillDownRequest, type PaginationState, type PivotFieldConfig, type PivotModel, type SourceFilter } from 'pivot-grid-table';
 import 'pivot-grid-table/styles.css';
 
 ${dataShapeCode}
@@ -134,12 +125,14 @@ interface OrdersPivotApi {
     model: PivotModel;
     filters: SourceFilter[];
     page: PaginationState;
-  }) => Promise<{ result: PivotResult; page: { totalRows: number; totalPages: number } }>;
+    signal: AbortSignal;
+  }) => Promise<{ result: PivotResult; totalRows: number }>;
   loadDrillDown: (request: {
     drillDown: DrillDownRequest;
     filters: SourceFilter[];
     page: PaginationState;
-  }) => Promise<{ rows: OrderRow[]; page: { totalRows: number; totalPages: number } }>;
+    signal: AbortSignal;
+  }) => Promise<{ rows: OrderRow[]; totalRows: number }>;
 }
 
 const initialModel: PivotModel = {
@@ -149,106 +142,41 @@ const initialModel: PivotModel = {
 };
 
 export function ServerOrdersPivot({ api, fields }: { api: OrdersPivotApi; fields: PivotFieldConfig[] }) {
-  const [pivotModel, setPivotModel] = useState<PivotModel>(initialModel);
-  const [filters, setFilters] = useState<SourceFilter[]>([]);
-  const [pivotPage, setPivotPage] = useState<PaginationState>({ pageIndex: 0, pageSize: 5 });
-  const [pivotResult, setPivotResult] = useState<PivotResult | null>(null);
-  const [totalPivotRows, setTotalPivotRows] = useState(0);
-  const [loading, setLoading] = useState(false);
-  const [activeDrillDown, setActiveDrillDown] = useState<DrillDownRequest | null>(null);
-  const [drillDownPage, setDrillDownPage] = useState<PaginationState>({ pageIndex: 0, pageSize: 25 });
-  const [drillDownPageRows, setDrillDownPageRows] = useState<RowData[]>([]);
-  const [totalDrillDownRows, setTotalDrillDownRows] = useState(0);
-  const [isDrillDownFetching, setIsDrillDownFetching] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-
-    api.loadPivot({ model: pivotModel, filters, page: pivotPage }).then(({ result, page }) => {
-      if (!cancelled) {
-        setPivotResult(result);
-        setTotalPivotRows(page.totalRows);
-        setLoading(false);
-      }
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [api, filters, pivotModel, pivotPage]);
-
-  const openDrillDown = useCallback((request: DrillDownRequest) => {
-    setActiveDrillDown(request);
-    setDrillDownPage((current) => ({ pageIndex: 0, pageSize: current.pageSize }));
-  }, []);
-
-  useEffect(() => {
-    if (!activeDrillDown) return undefined;
-
-    let cancelled = false;
-    const request = { drillDown: activeDrillDown, filters, page: drillDownPage };
-
-    setIsDrillDownFetching(true);
-    api.loadDrillDown(request).then(({ rows, page }) => {
-      if (!cancelled) {
-        setDrillDownPageRows(rows);
-        setTotalDrillDownRows(page.totalRows);
-        setIsDrillDownFetching(false);
-      }
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [activeDrillDown, api, drillDownPage, filters]);
-
-  const changeDrillDownPage = useCallback(
-    (state: PaginationState, request: DrillDownRequest) => {
-      setActiveDrillDown(request);
-      setDrillDownPage(state);
-    },
-    [],
+  const loadPivotPage = useCallback(
+    ({ model, filters, page, signal }: { model: PivotModel; filters: SourceFilter[]; page: PaginationState; signal: AbortSignal }) =>
+      api.loadPivot({ model, filters, page, signal }),
+    [api],
   );
 
-  const changeModel = useCallback((model: PivotModel) => {
-    setPivotModel(model);
-    setPivotPage((current) => ({ ...current, pageIndex: 0 }));
-    setActiveDrillDown(null);
-  }, []);
-
-  const changeFilters = useCallback((nextFilters: SourceFilter[]) => {
-    setFilters(nextFilters);
-    setPivotPage((current) => ({ ...current, pageIndex: 0 }));
-    setActiveDrillDown(null);
-  }, []);
+  const loadDrillDownPage = useCallback(
+    ({
+      request,
+      filters,
+      page,
+      signal,
+    }: {
+      request: DrillDownRequest;
+      filters: SourceFilter[];
+      page: PaginationState;
+      signal: AbortSignal;
+    }) => api.loadDrillDown({ drillDown: request, filters, page, signal }),
+    [api],
+  );
 
   return (
     <PivotTable
-      pivotResult={pivotResult}
+      getPage={loadPivotPage}
       fields={fields}
-      pivotModel={pivotModel}
-      onPivotModelChange={changeModel}
-      filters={filters}
-      onFiltersChange={changeFilters}
-      loading={loading}
+      defaultPivotModel={initialModel}
       deferFilterUpdates
       pagination={{
-        mode: 'server',
-        state: pivotPage,
-        totalRows: totalPivotRows,
-        onChange: setPivotPage,
+        defaultPageSize: 5,
         pageSizeOptions: [5, 10, 25, 50, 100],
       }}
       drillDown={{
-        onOpen: openDrillDown,
-        rows: drillDownPageRows,
-        loading: isDrillDownFetching,
+        getPage: loadDrillDownPage,
         pagination: {
-          mode: 'server',
-          state: drillDownPage,
-          totalRows: totalDrillDownRows,
-          onChange: changeDrillDownPage,
+          defaultPageSize: 25,
           pageSizeOptions: [5, 10, 25, 50, 100],
         },
       }}

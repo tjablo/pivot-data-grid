@@ -6,6 +6,19 @@ This project follows Semantic Versioning.
 
 ## [Unreleased]
 
+### Added
+
+- Managed backend `getPage` loaders for `PivotTable` pivot pages and drilldown pages, including page state, loading state, total row counts, server sort state, abort signals, and stale-response protection.
+- Dedicated client-side and server-side usage guides.
+- Pivot loading skeletons for initial server loads before a first `PivotResult` exists.
+
+### Changed
+
+- Documented `getPage` as the recommended backend pagination API while keeping controlled `pivotResult` / `drillDown.rows` flows as advanced escape hatches.
+- Removed the pre-release `drillDown.onLoad` shortcut and first-dimension drilldown request fields in favor of `drillDown.getPage` and full `rowValues` / `columnValues` scope.
+- Source filter menu edits are deferred until the filter menu closes by default, reducing unnecessary client recomputation and backend requests.
+- Included `docs` in the published package so README documentation links resolve from npm.
+
 ## [0.1.0-alpha.0] - 2026-05-13
 
 ### Added
