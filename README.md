@@ -232,7 +232,7 @@ Use server-side mode when the backend owns aggregation, permissions, row limits,
 
 `page.pageIndex` is zero-based. Return `totalRows` from loaders; the component derives page count and keeps the page controls in sync. Pass `signal` to `fetch` or your request layer so stale requests can be aborted.
 
-See [Server-side pivot mode](docs/SERVER_SIDE.md) for controlled mode, backend drilldown pagination, sorting, and when to use each API style.
+See [Server-side pivot mode](docs/SERVER_SIDE.md) for the backend `PivotResult` shape, generated pivot column ids, controlled mode, backend drilldown pagination, sorting, and when to use each API style.
 
 ## PivotTable Props
 

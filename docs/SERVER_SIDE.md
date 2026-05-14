@@ -49,6 +49,104 @@ Source filter edits are drafted while the filter action menu is open. `getPage` 
 
 While the first backend page is loading, `PivotTable` renders skeleton rows using fallback columns derived from the current pivot model. The grid no longer appears empty just because `pivotResult` has not arrived yet.
 
+## Backend `PivotResult` Shape
+
+The backend receives a `PivotModel` and returns a `PivotResult`. The model arrays contain source field names:
+
+```ts
+type PivotModel = {
+  rows: string[]; // row dimension fields, e.g. ['product']
+  columns: string[]; // column dimension fields, e.g. ['region']
+  values: Array<{ field: string; aggFunc: 'sum' | 'count' | 'avg' | 'min' | 'max' }>;
+};
+```
+
+`PivotResult.rows` is the rendered group list. Every row should include:
+
+- `id`: stable row id for React keys. Use any deterministic id that is unique within the returned page/result.
+- `_groupKey`: compatibility/debug key. If your backend does not need a separate internal group key, set it to the same value as `id`.
+- `_count`: count of source rows inside that pivot row.
+- one property for each row dimension field, using the original field name as the object key.
+- one property per generated pivot value column.
+- one property per generated row total column.
+
+`PivotResult.columns` describes the pivot column dimension combinations. Each item should include:
+
+- `id`: stable column key for that dimension combination. It can be any deterministic string, as long as the generated value cells use the same id.
+- `label`: user-facing column header, for example `AMER` or `AMER / SMB`.
+- `values`: mapping of source column dimension field to selected value.
+
+For a simple model:
+
+```json
+{
+  "rows": ["product"],
+  "columns": ["region"],
+  "values": [{ "field": "amount", "aggFunc": "sum" }]
+}
+```
+
+the backend can return:
+
+```json
+{
+  "columns": [
+    { "id": "AMER", "label": "AMER", "values": { "region": "AMER" } },
+    { "id": "EMEA", "label": "EMEA", "values": { "region": "EMEA" } }
+  ],
+  "rows": [
+    {
+      "id": "Laptop",
+      "_groupKey": "Laptop",
+      "_count": 2,
+      "product": "Laptop",
+      "pivot__AMER__amount": 200,
+      "pivot__EMEA__amount": 100,
+      "_total__amount": 300
+    }
+  ],
+  "columnValues": ["AMER", "EMEA"],
+  "rowFields": ["product"],
+  "columnFields": ["region"],
+  "valueFields": [{ "field": "amount", "aggFunc": "sum" }],
+  "totalSourceRecords": 1000,
+  "filteredSourceRecords": 640
+}
+```
+
+Column value keys use the same helpers exported by the package:
+
+```ts
+import { getPivotTotalColumnId, getPivotValueColumnId } from 'pivot-grid-table';
+
+const cellId = getPivotValueColumnId('AMER', 'amount'); // "pivot__AMER__amount"
+const totalId = getPivotTotalColumnId('amount'); // "_total__amount"
+```
+
+If the model has multiple value configs, the value suffix becomes `${field}:${aggFunc}` so ids stay unique:
+
+```ts
+getPivotValueColumnId('AMER', 'amount:sum'); // "pivot__AMER__amount%3Asum"
+getPivotTotalColumnId('amount:sum'); // "_total__amount%3Asum"
+```
+
+If the model has multiple column dimensions, choose a deterministic `column.id` for the full dimension tuple. Do not depend on the package's internal client-side grouping separator. A readable id is fine when values are simple; for arbitrary user data, prefer an encoded JSON tuple or another backend-safe key format.
+
+```ts
+const columnId = JSON.stringify({ region: 'AMER', segment: 'SMB' });
+const column = {
+  id: columnId,
+  label: 'AMER / SMB',
+  values: { region: 'AMER', segment: 'SMB' },
+};
+
+const cellId = getPivotValueColumnId(column.id, 'amount');
+```
+
+For row ids, use any deterministic backend key for the selected row dimension values. The drilldown request is not created from `id` or `_groupKey`; it is created from the row dimension properties themselves. When a row field is nested, keep the original path as the row object key, for example `{ "salesRep.name": "Ada" }`.
+
+The backend may choose the order of `columns` and `rows`. `PivotTable` renders them as received, except local client mode sorts columns by label and rows by the first row field.
+
 ## Backend Drilldown Pagination
 
 Use `drillDown.getPage` when source rows for a clicked pivot cell are fetched page by page.
