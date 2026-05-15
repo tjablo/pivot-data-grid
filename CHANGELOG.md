@@ -6,6 +6,8 @@ This project follows Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.1.0-alpha.3] - 2026-05-15
+
 ### Added
 
 - `PivotTable` fields can now define `renderFieldCell` to render custom React content for pivot row field cells, generated pivot column headers, and drilldown source cells, with a `location` argument for context-specific UI.
@@ -65,6 +67,7 @@ This project follows Semantic Versioning.
 
 ### Fixed
 
-[Unreleased]: https://github.com/tjablo/pivot-data-grid/compare/v0.1.0-alpha.1...HEAD
+[Unreleased]: https://github.com/tjablo/pivot-data-grid/compare/v0.1.0-alpha.3...HEAD
+[0.1.0-alpha.3]: https://github.com/tjablo/pivot-data-grid/compare/v0.1.0-alpha.1...v0.1.0-alpha.3
 [0.1.0-alpha.1]: https://github.com/tjablo/pivot-data-grid/compare/v0.1.0-alpha.0...v0.1.0-alpha.1
 [0.1.0-alpha.0]: https://github.com/tjablo/pivot-data-grid/releases/tag/v0.1.0-alpha.0

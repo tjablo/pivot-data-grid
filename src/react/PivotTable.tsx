@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, type ReactNode } from 'react';
+import { type ReactNode, useCallback, useMemo, useState } from 'react';
 import { autoDetectFields, buildDefaultModel } from '../core/fields';
 import { normalizePivotModel } from '../core/model';
 import { getPivotTotalColumnId, getPivotValueColumnId } from '../core/pivot';
@@ -295,10 +295,10 @@ export function PivotTable(props: PivotTableProps) {
   const resolvedEntityName = entityName ?? labels.entityName;
   const clientMode = 'data' in props && props.data != null;
   const sourceData: RowData[] = clientMode ? props.data : [];
-  const fields = useMemo<PivotTableFieldConfig[]>(() => autoDetectFields(sourceData, props.fields) as PivotTableFieldConfig[], [
-    props.fields,
-    sourceData,
-  ]);
+  const fields = useMemo<PivotTableFieldConfig[]>(
+    () => autoDetectFields(sourceData, props.fields) as PivotTableFieldConfig[],
+    [props.fields, sourceData],
+  );
   const fallbackModel = useMemo(() => normalizePivotModel(defaultPivotModel ?? buildDefaultModel(fields)), [defaultPivotModel, fields]);
   const [model, setModel] = useControllableState(pivotModel, fallbackModel, onPivotModelChange);
   const normalizedModel = useMemo(() => normalizePivotModel(model), [model]);

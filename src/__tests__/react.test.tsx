@@ -309,10 +309,14 @@ describe('PivotTable', () => {
 
   it('renders custom field cells for pivot row fields and drilldown source fields', async () => {
     const renderProductField = vi.fn(({ value, location }) => (
-      <span data-testid={`pivot-product-${String(value)}`}>SKU {String(value)} {location}</span>
+      <span data-testid={`pivot-product-${String(value)}`}>
+        SKU {String(value)} {location}
+      </span>
     ));
     const renderAmountField = vi.fn(({ value, location }) => (
-      <span data-testid={`source-amount-${String(value)}`}>source amount {String(value)} {location}</span>
+      <span data-testid={`source-amount-${String(value)}`}>
+        source amount {String(value)} {location}
+      </span>
     ));
     const richFields: PivotTableFieldConfig[] = fields.map((field) => {
       if (field.field === 'product') {
@@ -357,7 +361,9 @@ describe('PivotTable', () => {
 
   it('renders custom field cells for generated pivot column headers', () => {
     const renderProductField = vi.fn(({ value, location }) => (
-      <span data-testid={`column-product-${String(value)}`}>Column {String(value)} {location}</span>
+      <span data-testid={`column-product-${String(value)}`}>
+        Column {String(value)} {location}
+      </span>
     ));
     const columnFields: PivotTableFieldConfig[] = fields.map((field) =>
       field.field === 'product'
