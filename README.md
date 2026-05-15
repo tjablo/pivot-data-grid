@@ -255,10 +255,28 @@ See [Server-side pivot mode](docs/SERVER_SIDE.md) for the backend `PivotResult` 
 | `deferFilterUpdates` | Keeps source filter menu edits local until the menu closes. Defaults to `true`. |
 | `pagination` | `false` disables pivot pagination, `true` uses defaults, and an object configures pivot page sizes, controlled state, and backend pagination. |
 | `drillDown` | Scoped drilldown behavior: managed `getPage`, `mode`, controlled `rows`, `loading`, `onOpen`, and drilldown-only `pagination`. |
-| `formatValue` | Numeric pivot-value formatter. |
+| `formatValue` | Pivot metric formatter. Receives `(value, columnId, context)`, where `context` includes the metric kind, field, aggregation, and pivot column metadata. |
 | `columnSizing` | Width, `minWidth`, and `maxWidth` overrides for generated `row`, `count`, `value`, `total`, and fallback `loading` columns. |
 | `labels` | Overrides built-in text and count formatters. |
 | `className` | Theme scope for CSS token overrides. |
+
+Use `formatValue` when different metrics need different display precision or units. The `columnId` argument is kept for compatibility, but new code should prefer the structured context:
+
+```tsx
+<PivotTable
+  data={orders}
+  fields={fields}
+  formatValue={(value, _columnId, context) => {
+    if (value == null) return '-';
+    if (context.kind === 'count') return String(value);
+    if (context.field === 'exchangeRate' && context.aggFunc === 'avg') return String(value);
+    if (context.field === 'amount') return `$${String(value)}`;
+    return String(value);
+  }}
+/>
+```
+
+Client-side aggregation returns safe values as `number` and high-precision values as decimal `string`. If you need rounding or padding for decimal strings, use a decimal-aware formatter in `formatValue` rather than coercing those strings back to `number`.
 
 Use `columnSizing` when formatted values need more horizontal space:
 

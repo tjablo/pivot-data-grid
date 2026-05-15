@@ -98,6 +98,76 @@ describe('pivotData', () => {
     expect(result.valueFields).toEqual([{ field: 'amount', aggFunc: 'sum' }]);
     expect(emea?._total__amount).toBe(150);
   });
+
+  it('preserves precise sums when totals exceed safe JavaScript integers', () => {
+    const result = pivotData(
+      [
+        { bucket: 'A', amount: Number.MAX_SAFE_INTEGER },
+        { bucket: 'A', amount: 2 },
+      ],
+      {
+        rows: ['bucket'],
+        columns: [],
+        values: [{ field: 'amount', aggFunc: 'sum' }],
+      },
+    );
+
+    expect(result.rows[0]?._total__amount).toBe('9007199254740993');
+  });
+
+  it('preserves large decimal strings before they are coerced by JavaScript numbers', () => {
+    const result = pivotData(
+      [
+        { bucket: 'A', amount: '9007199254740993.10' },
+        { bucket: 'A', amount: '0.20' },
+      ],
+      {
+        rows: ['bucket'],
+        columns: [],
+        values: [{ field: 'amount', aggFunc: 'sum' }],
+      },
+    );
+
+    expect(result.rows[0]?._total__amount).toBe('9007199254740993.3');
+  });
+
+  it('uses decimal arithmetic for fractional sums', () => {
+    const result = pivotData(
+      [
+        { bucket: 'A', amount: 0.1 },
+        { bucket: 'A', amount: 0.2 },
+      ],
+      {
+        rows: ['bucket'],
+        columns: [],
+        values: [{ field: 'amount', aggFunc: 'sum' }],
+      },
+    );
+
+    expect(result.rows[0]?._total__amount).toBe(0.3);
+  });
+
+  it('keeps avg, min, and max precise for large numeric strings', () => {
+    const result = pivotData(
+      [
+        { bucket: 'A', amount: '9007199254740993' },
+        { bucket: 'A', amount: '9007199254740995' },
+      ],
+      {
+        rows: ['bucket'],
+        columns: [],
+        values: [
+          { field: 'amount', aggFunc: 'avg' },
+          { field: 'amount', aggFunc: 'min' },
+          { field: 'amount', aggFunc: 'max' },
+        ],
+      },
+    );
+
+    expect(result.rows[0]?.['_total__amount%3Aavg']).toBe('9007199254740994');
+    expect(result.rows[0]?.['_total__amount%3Amin']).toBe('9007199254740993');
+    expect(result.rows[0]?.['_total__amount%3Amax']).toBe('9007199254740995');
+  });
 });
 
 describe('drilldown', () => {

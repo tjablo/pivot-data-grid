@@ -70,6 +70,7 @@
     "@radix-ui/react-popover": "^1.1.15",
     "@radix-ui/react-select": "^2.2.6",
     "@tanstack/react-virtual": "^3.13.24",
+    "big.js": "^7.0.1",
     "clsx": "^2.1.1",
     "lucide-react": "^0.468.0"
   },
@@ -81,6 +82,7 @@
     "@biomejs/biome": "2.4.15",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.3.0",
+    "@types/big.js": "^6.2.2",
     "@types/node": "^22.15.3",
     "@types/react": "^19.1.2",
     "@types/react-dom": "^19.1.3",

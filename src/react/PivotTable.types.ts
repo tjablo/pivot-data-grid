@@ -1,4 +1,15 @@
-import type { DrillDownRequest, PivotFieldConfig, PivotModel, PivotResult, RowData, SourceFilter } from '../core/types';
+import type {
+  AggregationFn,
+  DrillDownRequest,
+  PivotColumnKey,
+  PivotFieldConfig,
+  PivotMetricValue,
+  PivotModel,
+  PivotResult,
+  PivotValueConfig,
+  RowData,
+  SourceFilter,
+} from '../core/types';
 import type { PaginationMode, PaginationState, SortState } from './DataGrid.types';
 import type { PivotTableLabelOverrides } from './labels';
 
@@ -25,6 +36,23 @@ export interface PivotTableColumnSizing {
   /** Fallback column used before the first server result arrives. Defaults to 160px. */
   loading?: PivotTableColumnSize;
 }
+
+export interface PivotValueFormatContext {
+  /** Generated grid column id for the rendered metric cell. */
+  columnId: string;
+  /** Identifies whether the metric is the row count, a pivot-column value, or a row total. */
+  kind: 'count' | 'value' | 'total';
+  /** Active value aggregation behind this metric. Undefined for the count column. */
+  valueConfig?: PivotValueConfig;
+  /** Convenience alias for `valueConfig.field`. Undefined for the count column. */
+  field?: string;
+  /** Convenience alias for `valueConfig.aggFunc`. Undefined for the count column. */
+  aggFunc?: AggregationFn;
+  /** Pivot column metadata for generated pivot value cells. Undefined for count and total columns. */
+  pivotColumn?: PivotColumnKey;
+}
+
+export type PivotValueFormatter = (value: PivotMetricValue, columnId: string, context: PivotValueFormatContext) => string;
 
 export interface PivotTableManagedPaginationOptions {
   /** Enables the managed backend pagination control. Defaults to true. */
@@ -156,8 +184,8 @@ interface PivotTableBaseProps {
   onFiltersChange?: (filters: SourceFilter[]) => void;
   /** Entity label used in record-count text. */
   entityName?: string;
-  /** Formats numeric pivot values. Receives the numeric value and generated pivot column id. */
-  formatValue?: (value: number | null, columnId: string) => string;
+  /** Formats pivot metric values. Large or high-precision values may be strings to avoid numeric precision loss. */
+  formatValue?: PivotValueFormatter;
   /** Keeps filter menu edits local until the menu closes. Defaults to true. */
   deferFilterUpdates?: boolean;
   /** Additional class applied to the `.pg-root` wrapper for theme scoping. */

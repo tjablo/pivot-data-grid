@@ -2,12 +2,18 @@ import { useCallback, useMemo, useState } from 'react';
 import { autoDetectFields, buildDefaultModel } from '../core/fields';
 import { normalizePivotModel } from '../core/model';
 import { getPivotTotalColumnId, getPivotValueColumnId } from '../core/pivot';
-import type { PivotFieldConfig, PivotModel, PivotResult, PivotRow, RowData } from '../core/types';
+import type { PivotColumnKey, PivotFieldConfig, PivotModel, PivotResult, PivotRow, RowData } from '../core/types';
 import { DataGrid } from './DataGrid';
 import type { DataGridColumn, PaginationState, SortState } from './DataGrid.types';
 import { DrillDownPanel } from './DrillDownPanel';
 import { type PivotTableLabels, resolvePivotTableLabels } from './labels';
-import type { PivotTableColumnSize, PivotTableColumnSizing, PivotTableProps } from './PivotTable.types';
+import type {
+  PivotTableColumnSize,
+  PivotTableColumnSizing,
+  PivotTableProps,
+  PivotValueFormatContext,
+  PivotValueFormatter,
+} from './PivotTable.types';
 import { PivotToolbar } from './PivotToolbar';
 import { PortalContainerContext } from './portalContext';
 import { useControllableState } from './useControllableState';
@@ -17,11 +23,28 @@ import { usePivotData } from './usePivotData';
 import { usePivotDrillDown } from './usePivotDrillDown';
 import { usePivotPagination } from './usePivotPagination';
 
-function formatNumber(value: unknown, fallback?: (value: number | null, columnId: string) => string, columnId = '') {
+function createFormatContext(
+  kind: PivotValueFormatContext['kind'],
+  columnId: string,
+  valueConfig?: PivotModel['values'][number],
+  pivotColumn?: PivotColumnKey,
+): PivotValueFormatContext {
+  return {
+    columnId,
+    kind,
+    valueConfig,
+    field: valueConfig?.field,
+    aggFunc: valueConfig?.aggFunc,
+    pivotColumn,
+  };
+}
+
+function formatMetricValue(value: unknown, context: PivotValueFormatContext, fallback?: PivotValueFormatter) {
   if (value == null) return '-';
-  const numericValue = Number(value);
-  if (!Number.isFinite(numericValue)) return String(value);
-  return fallback ? fallback(numericValue, columnId) : numericValue.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  const metricValue = typeof value === 'number' || typeof value === 'string' ? value : String(value);
+  if (fallback) return fallback(metricValue, context.columnId, context);
+  if (typeof metricValue === 'string') return metricValue;
+  return metricValue.toLocaleString(undefined, { maximumFractionDigits: 2 });
 }
 
 function getValueLabel(
@@ -46,7 +69,7 @@ function buildColumns(
   model: PivotModel,
   fields: PivotFieldConfig[],
   labels: PivotTableLabels,
-  formatValue?: (value: number | null, columnId: string) => string,
+  formatValue?: PivotValueFormatter,
   columnSizing?: PivotTableColumnSizing,
 ): DataGridColumn<PivotRow>[] {
   const isSingleValue = model.values.length === 1;
@@ -72,7 +95,7 @@ function buildColumns(
     align: 'right',
     sortable: true,
     className: 'pg-metric-cell',
-    format: (value) => formatNumber(value, formatValue, '_count'),
+    format: (value) => formatMetricValue(value, createFormatContext('count', '_count'), formatValue),
   });
 
   for (const pivotColumn of result.columns) {
@@ -91,7 +114,7 @@ function buildColumns(
         className: 'pg-metric-cell',
         copyable: valueField?.copyable,
         valueTone: valueField?.valueTone,
-        format: (value) => formatNumber(value, formatValue, id),
+        format: (value) => formatMetricValue(value, createFormatContext('value', id, valueConfig, pivotColumn), formatValue),
       });
     }
   }
@@ -111,7 +134,7 @@ function buildColumns(
       className: 'pg-metric-cell',
       copyable: valueField?.copyable,
       valueTone: valueField?.valueTone,
-      format: (value) => formatNumber(value, formatValue, id),
+      format: (value) => formatMetricValue(value, createFormatContext('total', id, valueConfig), formatValue),
     });
   }
 
@@ -122,7 +145,7 @@ function buildLoadingColumns(
   model: PivotModel,
   fields: PivotFieldConfig[],
   labels: PivotTableLabels,
-  formatValue?: (value: number | null, columnId: string) => string,
+  formatValue?: PivotValueFormatter,
   columnSizing?: PivotTableColumnSizing,
 ): DataGridColumn<PivotRow>[] {
   const isSingleValue = model.values.length === 1;
@@ -148,7 +171,7 @@ function buildLoadingColumns(
     align: 'right',
     sortable: true,
     className: 'pg-metric-cell',
-    format: (value) => formatNumber(value, formatValue, '_count'),
+    format: (value) => formatMetricValue(value, createFormatContext('count', '_count'), formatValue),
   });
 
   for (const valueConfig of model.values) {
@@ -166,7 +189,7 @@ function buildLoadingColumns(
       className: 'pg-metric-cell',
       copyable: valueField?.copyable,
       valueTone: valueField?.valueTone,
-      format: (value) => formatNumber(value, formatValue, id),
+      format: (value) => formatMetricValue(value, createFormatContext('total', id, valueConfig), formatValue),
     });
   }
 

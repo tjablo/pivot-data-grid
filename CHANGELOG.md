@@ -6,6 +6,15 @@ This project follows Semantic Versioning.
 
 ## [Unreleased]
 
+### Added
+
+- `PivotTable.formatValue` now receives a structured context with the metric kind, generated column id, value aggregation config, field, aggregation, and pivot column metadata.
+- Client-side pivot aggregation uses decimal arithmetic for sums, averages, minimums, and maximums, preserving large or high-precision results as decimal strings when a JavaScript number would lose precision.
+
+### Changed
+
+- `PivotTable.formatValue` accepts `number | string | null` metric values so high-precision aggregation results can be displayed without coercion back to unsafe JavaScript numbers.
+
 ## [0.1.0-alpha.1] - 2026-05-14
 
 ### Added

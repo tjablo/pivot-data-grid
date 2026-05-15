@@ -21,6 +21,7 @@ export type {
   FilterOperator,
   PivotColumnKey,
   PivotFieldConfig,
+  PivotMetricValue,
   PivotModel,
   PivotRequest,
   PivotResult,
@@ -70,4 +71,6 @@ export type {
   PivotTablePaginationMode,
   PivotTablePaginationOptions,
   PivotTableProps,
+  PivotValueFormatContext,
+  PivotValueFormatter,
 } from './react/PivotTable.types';

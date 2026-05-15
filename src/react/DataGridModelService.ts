@@ -1,25 +1,15 @@
 import type { ReactNode } from 'react';
+import { toBigNumber } from '../core/access';
 import type { RowData } from '../core/types';
 import type { DataGridCellTone, DataGridColumn } from './DataGrid.types';
 
 export const DEFAULT_DATA_GRID_PAGE_SIZE_OPTIONS = [25, 50, 100];
 
-function toToneNumber(value: unknown): number | null {
-  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
-  if (typeof value !== 'string') return null;
-
-  const trimmedValue = value.trim();
-  if (!/^-?\d+(?:\.\d+)?$/.test(trimmedValue)) return null;
-
-  const numericValue = Number(trimmedValue);
-  return Number.isFinite(numericValue) ? numericValue : null;
-}
-
 function getSignedValueTone(value: unknown): DataGridCellTone | null {
-  const numericValue = toToneNumber(value);
+  const numericValue = toBigNumber(value);
   if (numericValue == null) return null;
-  if (numericValue > 0) return 'positive';
-  if (numericValue < 0) return 'negative';
+  if (numericValue.gt(0)) return 'positive';
+  if (numericValue.lt(0)) return 'negative';
   return 'neutral';
 }
 
@@ -42,9 +32,9 @@ export class DataGridModelService {
     if (left == null) return -1;
     if (right == null) return 1;
 
-    const leftNumber = typeof left === 'number' ? left : Number(left);
-    const rightNumber = typeof right === 'number' ? right : Number(right);
-    if (Number.isFinite(leftNumber) && Number.isFinite(rightNumber)) return leftNumber - rightNumber;
+    const leftNumber = toBigNumber(left);
+    const rightNumber = toBigNumber(right);
+    if (leftNumber != null && rightNumber != null) return leftNumber.cmp(rightNumber);
 
     return String(left).localeCompare(String(right), undefined, { numeric: true, sensitivity: 'base' });
   }

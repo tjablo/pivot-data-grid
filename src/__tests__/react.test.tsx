@@ -2,9 +2,11 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { pivotData } from '../core/pivot';
-import type { PivotFieldConfig, PivotModel, RowData, SourceFilter } from '../core/types';
+import type { PivotFieldConfig, PivotMetricValue, PivotModel, RowData, SourceFilter } from '../core/types';
 import { DataGrid } from '../react/DataGrid';
+import { DataGridModelService } from '../react/DataGridModelService';
 import { PivotTable } from '../react/PivotTable';
+import type { PivotValueFormatContext } from '../react/PivotTable.types';
 
 const rows: RowData[] = [
   { product: 'Laptop', region: 'EMEA', amount: 100, orderedAt: '2026-01-01' },
@@ -29,6 +31,14 @@ function deferred<T>() {
 }
 
 describe('DataGrid', () => {
+  it('sorts large numeric strings without losing precision', () => {
+    const service = new DataGridModelService();
+
+    expect(service.compareValues('9007199254740993', '9007199254740992')).toBe(1);
+    expect(service.compareValues('9007199254740992', '9007199254740993')).toBe(-1);
+    expect(service.compareValues('9007199254740993.1', '9007199254740993.01')).toBe(1);
+  });
+
   it('renders rows, allows copyable cells, and sorts when a sortable header is clicked', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     const gridRows = [...rows, { product: 'Refund', region: 'AMER', amount: -25, orderedAt: '2026-01-04' }];
@@ -251,6 +261,50 @@ describe('PivotTable', () => {
     expect(within(drilldownGrid).queryByRole('gridcell', { name: 'Laptop' })).not.toBeInTheDocument();
     expect(within(drilldownGrid).queryByRole('gridcell', { name: 'AMER' })).not.toBeInTheDocument();
     expect(within(drilldownGrid).getByRole('gridcell', { name: '200' })).toBeInTheDocument();
+  });
+
+  it('passes value formatter context for generated metric columns', () => {
+    const formatValue = vi.fn((value: PivotMetricValue, columnId: string, context: PivotValueFormatContext) => {
+      if (context.kind === 'count') return `count:${columnId}:${value}`;
+      const scope = context.kind === 'value' ? context.pivotColumn?.label : 'total';
+      return `${context.kind}:${scope}:${context.field}:${context.aggFunc}:${value}`;
+    });
+
+    render(
+      <PivotTable
+        data={rows}
+        fields={fields}
+        defaultPivotModel={{
+          rows: ['product'],
+          columns: ['region'],
+          values: [{ field: 'amount', aggFunc: 'sum' }],
+        }}
+        formatValue={formatValue}
+        pagination={false}
+      />,
+    );
+
+    expect(screen.getByRole('gridcell', { name: 'count:_count:2' })).toBeInTheDocument();
+    expect(screen.getByRole('gridcell', { name: 'value:AMER:amount:sum:200' })).toBeInTheDocument();
+    expect(screen.getByRole('gridcell', { name: 'total:total:amount:sum:300' })).toBeInTheDocument();
+    expect(formatValue).toHaveBeenCalledWith(
+      200,
+      'pivot__AMER__amount',
+      expect.objectContaining({
+        aggFunc: 'sum',
+        columnId: 'pivot__AMER__amount',
+        field: 'amount',
+        kind: 'value',
+        pivotColumn: expect.objectContaining({ label: 'AMER' }),
+        valueConfig: { field: 'amount', aggFunc: 'sum' },
+      }),
+    );
+    expect(formatValue).toHaveBeenCalledWith(
+      300,
+      '_total__amount',
+      expect.objectContaining({ aggFunc: 'sum', columnId: '_total__amount', field: 'amount', kind: 'total' }),
+    );
+    expect(formatValue).toHaveBeenCalledWith(2, '_count', expect.objectContaining({ columnId: '_count', kind: 'count' }));
   });
 
   it('renders and edits multiple value aggregations from the toolbar', async () => {
