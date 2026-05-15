@@ -12,6 +12,8 @@ Live playground: https://pivot-data-grid.vercel.app/
 
 Source repository: https://github.com/tjablo/pivot-data-grid
 
+![Pivot Grid Table server-side pivot, filters, and drilldown demo](docs/assets/pivot-grid-table-demo.gif)
+
 ## Core capabilities
 
 Pivot Grid Table keeps the core data contract portable while providing a practical React UI for analytics and finance workflows:
