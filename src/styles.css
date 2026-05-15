@@ -242,6 +242,29 @@
   box-shadow: var(--pg-focus, var(--pg-default-focus));
 }
 
+.pg-pivot-column-header,
+.pg-pivot-column-header-with-value,
+.pg-pivot-column-header-part,
+.pg-pivot-column-header-label {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.pg-pivot-column-header,
+.pg-pivot-column-header-with-value {
+  gap: 5px;
+}
+
+.pg-pivot-column-header-part {
+  gap: 5px;
+}
+
+.pg-pivot-column-header-separator,
+.pg-pivot-column-value-label {
+  color: var(--pg-muted, var(--pg-default-muted));
+}
+
 .pg-icon-button {
   width: 36px;
   padding: 0;

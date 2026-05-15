@@ -1,8 +1,8 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import { autoDetectFields, buildDefaultModel } from '../core/fields';
 import { normalizePivotModel } from '../core/model';
 import { getPivotTotalColumnId, getPivotValueColumnId } from '../core/pivot';
-import type { PivotColumnKey, PivotFieldConfig, PivotModel, PivotResult, PivotRow, RowData } from '../core/types';
+import type { PivotColumnKey, PivotModel, PivotResult, PivotRow, RowData } from '../core/types';
 import { DataGrid } from './DataGrid';
 import type { DataGridColumn, PaginationState, SortState } from './DataGrid.types';
 import { DrillDownPanel } from './DrillDownPanel';
@@ -10,6 +10,7 @@ import { type PivotTableLabels, resolvePivotTableLabels } from './labels';
 import type {
   PivotTableColumnSize,
   PivotTableColumnSizing,
+  PivotTableFieldConfig,
   PivotTableProps,
   PivotValueFormatContext,
   PivotValueFormatter,
@@ -49,7 +50,7 @@ function formatMetricValue(value: unknown, context: PivotValueFormatContext, fal
 
 function getValueLabel(
   valueConfig: PivotModel['values'][number],
-  fields: PivotFieldConfig[],
+  fields: PivotTableFieldConfig[],
   labels: PivotTableLabels,
   includeFieldLabel: boolean,
 ): string {
@@ -64,10 +65,60 @@ function getColumnSize(defaultWidth: number, size?: PivotTableColumnSize) {
   return { width: defaultWidth, ...size };
 }
 
+function getPivotRowFieldCellFormat(field: PivotTableFieldConfig | undefined): DataGridColumn<PivotRow>['format'] | undefined {
+  if (!field?.renderFieldCell) return undefined;
+  return (value, row) => field.renderFieldCell?.({ value, row, field, location: 'pivot-row' });
+}
+
+function renderNodeList(parts: Array<{ key: string; node: ReactNode }>, separator: string, className: string): ReactNode {
+  if (parts.length === 0) return '';
+  if (parts.every((part) => typeof part.node === 'string' || typeof part.node === 'number')) {
+    return parts.map((part) => part.node).join(` ${separator} `);
+  }
+
+  return (
+    <span className={className}>
+      {parts.map((part, index) => (
+        <span className="pg-pivot-column-header-part" key={part.key}>
+          {index > 0 ? <span className="pg-pivot-column-header-separator">{separator}</span> : null}
+          {part.node}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+function renderPivotColumnLabel(pivotColumn: PivotColumnKey, model: PivotModel, fields: PivotTableFieldConfig[]): ReactNode {
+  const parts = model.columns
+    .map((columnField) => {
+      const field = fields.find((candidate) => candidate.field === columnField);
+      const value = pivotColumn.values[columnField];
+      if (value == null) return null;
+      return {
+        key: `${columnField}:${value}`,
+        node: field?.renderFieldCell ? field.renderFieldCell({ value, field, location: 'pivot-column', pivotColumn }) : value,
+      };
+    })
+    .filter((part): part is { key: string; node: ReactNode } => part != null);
+
+  return parts.length ? renderNodeList(parts, '/', 'pg-pivot-column-header') : pivotColumn.label;
+}
+
+function renderPivotValueHeader(pivotColumnLabel: ReactNode, valueLabel: string, includeValueLabel: boolean): ReactNode {
+  if (!includeValueLabel) return pivotColumnLabel;
+  if (typeof pivotColumnLabel === 'string' || typeof pivotColumnLabel === 'number') return `${pivotColumnLabel} (${valueLabel})`;
+  return (
+    <span className="pg-pivot-column-header-with-value">
+      <span className="pg-pivot-column-header-label">{pivotColumnLabel}</span>
+      <span className="pg-pivot-column-value-label">({valueLabel})</span>
+    </span>
+  );
+}
+
 function buildColumns(
   result: PivotResult,
   model: PivotModel,
-  fields: PivotFieldConfig[],
+  fields: PivotTableFieldConfig[],
   labels: PivotTableLabels,
   formatValue?: PivotValueFormatter,
   columnSizing?: PivotTableColumnSizing,
@@ -84,6 +135,7 @@ function buildColumns(
       sortable: true,
       copyable: field?.copyable,
       valueTone: field?.valueTone,
+      format: getPivotRowFieldCellFormat(field),
     };
   });
 
@@ -104,9 +156,10 @@ function buildColumns(
       const suffix = isSingleValue ? valueConfig.field : `${valueConfig.field}:${valueConfig.aggFunc}`;
       const id = getPivotValueColumnId(pivotColumn.id, suffix);
       const valueLabel = getValueLabel(valueConfig, fields, labels, !isSingleValueField);
+      const pivotColumnLabel = renderPivotColumnLabel(pivotColumn, model, fields);
       columns.push({
         id,
-        header: isSingleValue ? pivotColumn.label : `${pivotColumn.label} (${valueLabel})`,
+        header: renderPivotValueHeader(pivotColumnLabel, valueLabel, !isSingleValue),
         accessor: id,
         ...getColumnSize(148, columnSizing?.value),
         align: 'right',
@@ -143,7 +196,7 @@ function buildColumns(
 
 function buildLoadingColumns(
   model: PivotModel,
-  fields: PivotFieldConfig[],
+  fields: PivotTableFieldConfig[],
   labels: PivotTableLabels,
   formatValue?: PivotValueFormatter,
   columnSizing?: PivotTableColumnSizing,
@@ -160,6 +213,7 @@ function buildLoadingColumns(
       sortable: true,
       copyable: field?.copyable,
       valueTone: field?.valueTone,
+      format: getPivotRowFieldCellFormat(field),
     };
   });
 
@@ -241,7 +295,10 @@ export function PivotTable(props: PivotTableProps) {
   const resolvedEntityName = entityName ?? labels.entityName;
   const clientMode = 'data' in props && props.data != null;
   const sourceData: RowData[] = clientMode ? props.data : [];
-  const fields = useMemo(() => autoDetectFields(sourceData, props.fields), [props.fields, sourceData]);
+  const fields = useMemo<PivotTableFieldConfig[]>(() => autoDetectFields(sourceData, props.fields) as PivotTableFieldConfig[], [
+    props.fields,
+    sourceData,
+  ]);
   const fallbackModel = useMemo(() => normalizePivotModel(defaultPivotModel ?? buildDefaultModel(fields)), [defaultPivotModel, fields]);
   const [model, setModel] = useControllableState(pivotModel, fallbackModel, onPivotModelChange);
   const normalizedModel = useMemo(() => normalizePivotModel(model), [model]);
@@ -377,6 +434,7 @@ export function PivotTable(props: PivotTableProps) {
             sortState={activeDrillDownSort?.state}
             onSortStateChange={activeDrillDownSort?.onChange}
             labels={labels}
+            renderHeader={drillDownOptions?.renderHeader}
             onClose={drillDown.close}
           />
         ) : (
@@ -427,6 +485,7 @@ export function PivotTable(props: PivotTableProps) {
             sortState={activeDrillDownSort?.state}
             onSortStateChange={activeDrillDownSort?.onChange}
             labels={labels}
+            renderHeader={drillDownOptions?.renderHeader}
             onClose={drillDown.close}
           />
         ) : null}

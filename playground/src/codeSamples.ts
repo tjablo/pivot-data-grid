@@ -82,7 +82,8 @@ const formatNumberCode = `function formatNumber(value: unknown): string {
 
 function getClientPivotCode(theme: ThemeMode) {
   return `import { useMemo } from 'react';
-import { PivotTable, type PivotFieldConfig, type PivotModel, type RowData } from 'pivot-grid-table';
+import { Globe2, Package } from 'lucide-react';
+import { PivotTable, type PivotTableFieldConfig, type PivotModel, type RowData } from 'pivot-grid-table';
 import 'pivot-grid-table/styles.css';
 
 ${dataShapeCode}
@@ -91,10 +92,33 @@ ${formatNumberCode}
 
 export function OrdersPivot({ orders }: { orders: OrderRow[] }) {
   // Keep field metadata stable so toolbar menus do not rebuild on every render.
-  const fields = useMemo<PivotFieldConfig[]>(
+  const fields = useMemo<PivotTableFieldConfig[]>(
     () => [
-      { field: 'product', label: 'Product', role: 'dimension', type: 'string', copyable: true },
-      { field: 'region', label: 'Region', role: 'dimension', type: 'string' },
+      {
+        field: 'product',
+        label: 'Product',
+        role: 'dimension',
+        type: 'string',
+        copyable: true,
+        renderFieldCell: ({ value, location }) => (
+          <span className="field-chip" data-location={location}>
+            <Package aria-hidden />
+            {String(value)}
+          </span>
+        ),
+      },
+      {
+        field: 'region',
+        label: 'Region',
+        role: 'dimension',
+        type: 'string',
+        renderFieldCell: ({ value, location }) => (
+          <span className="field-chip" data-location={location}>
+            <Globe2 aria-hidden />
+            {String(value)}
+          </span>
+        ),
+      },
       { field: 'channel', label: 'Channel', role: 'dimension', type: 'string' },
       { field: 'segment', label: 'Segment', role: 'dimension', type: 'string' },
       { field: 'salesRep.name', label: 'Sales rep', role: 'dimension', type: 'string', copyable: true },

@@ -329,6 +329,37 @@ button {
   overflow: hidden;
 }
 
+.field-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  color: inherit;
+}
+
+.field-chip-icon {
+  flex: 0 0 auto;
+  width: 15px;
+  height: 15px;
+  stroke-width: 2.15;
+}
+
+.field-chip-product .field-chip-icon {
+  color: #4b5563;
+}
+
+.field-chip-region .field-chip-icon {
+  color: #2563eb;
+}
+
+.theme-dark .field-chip-product .field-chip-icon {
+  color: #cbd5e1;
+}
+
+.theme-dark .field-chip-region .field-chip-icon {
+  color: #7dd3fc;
+}
+
 .api-debug-panel {
   margin-top: 14px;
   border: 1px solid rgb(102 112 133 / 20%);
