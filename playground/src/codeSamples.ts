@@ -153,7 +153,7 @@ export function OrdersPivot({ orders }: { orders: OrderRow[] }) {
 
 function getServerPivotCode(theme: ThemeMode) {
   return `import { useCallback } from 'react';
-import { PivotTable, type DrillDownRequest, type PaginationState, type PivotFieldConfig, type PivotModel, type PivotResult, type SourceFilter } from 'pivot-grid-table';
+import { PivotTable, type DrillDownRequest, type PaginationState, type PivotFieldConfig, type PivotModel, type PivotResult, type SourceFilter, type SortState } from 'pivot-grid-table';
 import 'pivot-grid-table/styles.css';
 
 ${dataShapeCode}
@@ -165,12 +165,14 @@ interface OrdersPivotApi {
     model: PivotModel;
     filters: SourceFilter[];
     page: PaginationState;
+    sort: SortState | null;
     signal: AbortSignal;
   }) => Promise<{ result: PivotResult; totalRows: number }>;
   loadDrillDown: (request: {
     drillDown: DrillDownRequest;
     filters: SourceFilter[];
     page: PaginationState;
+    sort: SortState | null;
     signal: AbortSignal;
   }) => Promise<{ rows: OrderRow[]; totalRows: number }>;
 }
@@ -183,8 +185,8 @@ const initialModel: PivotModel = {
 
 export function ServerOrdersPivot({ api, fields }: { api: OrdersPivotApi; fields: PivotFieldConfig[] }) {
   const loadPivotPage = useCallback(
-    ({ model, filters, page, signal }: { model: PivotModel; filters: SourceFilter[]; page: PaginationState; signal: AbortSignal }) =>
-      api.loadPivot({ model, filters, page, signal }),
+    ({ model, filters, page, sort, signal }: { model: PivotModel; filters: SourceFilter[]; page: PaginationState; sort: SortState | null; signal: AbortSignal }) =>
+      api.loadPivot({ model, filters, page, sort, signal }),
     [api],
   );
 
@@ -193,13 +195,15 @@ export function ServerOrdersPivot({ api, fields }: { api: OrdersPivotApi; fields
       request,
       filters,
       page,
+      sort,
       signal,
     }: {
       request: DrillDownRequest;
       filters: SourceFilter[];
       page: PaginationState;
+      sort: SortState | null;
       signal: AbortSignal;
-    }) => api.loadDrillDown({ drillDown: request, filters, page, signal }),
+    }) => api.loadDrillDown({ drillDown: request, filters, page, sort, signal }),
     [api],
   );
 

@@ -10,6 +10,7 @@ import {
   PivotTable,
   pivotData,
   type RowData,
+  type SortState,
   type SourceFilter,
 } from '../../../src';
 import { defaultPivotModel, fields, formatPlaygroundNumber } from '../demoData';
@@ -34,6 +35,7 @@ interface PivotApiRequest {
   model: PivotModel;
   filters: SourceFilter[];
   page: ApiPageRequest;
+  sort: SortState | null;
 }
 
 interface PivotApiResponse {
@@ -45,6 +47,7 @@ interface DrillDownApiRequest {
   drillDown: DrillDownRequest;
   filters: SourceFilter[];
   page: ApiPageRequest;
+  sort: SortState | null;
 }
 
 interface DrillDownApiResponse {
@@ -104,11 +107,40 @@ function getPagedRows<T>(rows: T[], page: ApiPageRequest): { rows: T[]; page: Ap
   };
 }
 
+function compareApiValues(left: unknown, right: unknown): number {
+  if (left == null && right == null) return 0;
+  if (left == null) return -1;
+  if (right == null) return 1;
+
+  const leftNumber = typeof left === 'number' || typeof left === 'string' ? Number(left) : Number.NaN;
+  const rightNumber = typeof right === 'number' || typeof right === 'string' ? Number(right) : Number.NaN;
+  if (Number.isFinite(leftNumber) && Number.isFinite(rightNumber)) return leftNumber - rightNumber;
+
+  return String(left).localeCompare(String(right), undefined, { numeric: true, sensitivity: 'base' });
+}
+
+function getNestedApiValue(row: RowData, path: string): unknown {
+  if (path in row) return row[path];
+  return path.split('.').reduce<unknown>((current, segment) => {
+    if (current == null || typeof current !== 'object') return undefined;
+    return (current as RowData)[segment];
+  }, row);
+}
+
+function sortApiRows<T extends RowData>(rows: T[], sort: SortState | null): T[] {
+  if (!sort) return rows;
+  const direction = sort.direction === 'asc' ? 1 : -1;
+  return [...rows].sort(
+    (left, right) => compareApiValues(getNestedApiValue(left, sort.columnId), getNestedApiValue(right, sort.columnId)) * direction,
+  );
+}
+
 async function fetchPivotFromApi(orders: RowData[], request: PivotApiRequest, signal?: AbortSignal): Promise<PivotApiResponse> {
   await delay(420, signal);
   const filtered = applySourceFilters(orders, request.filters);
   const fullResult = pivotData(filtered, request.model);
-  const pagedRows = getPagedRows(fullResult.rows, request.page);
+  const sortedRows = sortApiRows(fullResult.rows, request.sort);
+  const pagedRows = getPagedRows(sortedRows, request.page);
 
   return {
     result: {
@@ -125,7 +157,7 @@ async function fetchDrillDownFromApi(orders: RowData[], request: DrillDownApiReq
   await delay(350, signal);
   const filtered = applySourceFilters(orders, request.filters);
   const rows = getDrillDownRows(filtered, request.drillDown);
-  return getPagedRows(rows, request.page);
+  return getPagedRows(sortApiRows(rows, request.sort), request.page);
 }
 
 export function ServerSidePivotExample({ orders, theme }: ServerSidePivotExampleProps) {
@@ -136,14 +168,16 @@ export function ServerSidePivotExample({ orders, theme }: ServerSidePivotExample
       model,
       filters,
       page,
+      sort,
       signal,
     }: {
       model: PivotModel;
       filters: SourceFilter[];
       page: PaginationState;
+      sort: SortState | null;
       signal: AbortSignal;
     }) => {
-      const request: PivotApiRequest = { model, filters, page };
+      const request: PivotApiRequest = { model, filters, page, sort };
       const response = await fetchPivotFromApi(orders, request, signal);
 
       setLastExchange({
@@ -170,14 +204,16 @@ export function ServerSidePivotExample({ orders, theme }: ServerSidePivotExample
       request,
       filters,
       page,
+      sort,
       signal,
     }: {
       request: DrillDownRequest;
       filters: SourceFilter[];
       page: PaginationState;
+      sort: SortState | null;
       signal: AbortSignal;
     }) => {
-      const apiRequest: DrillDownApiRequest = { drillDown: request, filters, page };
+      const apiRequest: DrillDownApiRequest = { drillDown: request, filters, page, sort };
       const response = await fetchDrillDownFromApi(orders, apiRequest, signal);
 
       setLastExchange({
