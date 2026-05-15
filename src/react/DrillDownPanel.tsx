@@ -1,14 +1,15 @@
 import { ArrowLeft } from 'lucide-react';
 import { getNestedValue } from '../core/access';
-import type { DrillDownRequest, PivotFieldConfig, RowData } from '../core/types';
+import type { DrillDownRequest, RowData } from '../core/types';
 import { DataGrid } from './DataGrid';
 import type { DataGridColumn, PaginationMode, PaginationState, SortMode, SortState } from './DataGrid.types';
 import type { PivotTableLabels } from './labels';
+import type { PivotTableDrillDownHeaderPart, PivotTableDrillDownHeaderRenderer, PivotTableFieldConfig } from './PivotTable.types';
 
 interface DrillDownPanelProps {
   request: DrillDownRequest;
   rows: RowData[];
-  fields: PivotFieldConfig[];
+  fields: PivotTableFieldConfig[];
   loading?: boolean;
   entityName: string;
   height?: number | string;
@@ -24,6 +25,7 @@ interface DrillDownPanelProps {
   sortState?: SortState | null;
   onSortStateChange?: (state: SortState | null) => void;
   labels: PivotTableLabels;
+  renderHeader?: PivotTableDrillDownHeaderRenderer;
   onClose: () => void;
 }
 
@@ -36,8 +38,25 @@ function formatFallbackFieldName(field: string): string {
     .join(' ');
 }
 
-function getFieldLabel(fields: PivotFieldConfig[], field: string): string {
+function getFieldLabel(fields: PivotTableFieldConfig[], field: string): string {
   return fields.find((candidate) => candidate.field === field)?.label ?? formatFallbackFieldName(field);
+}
+
+function buildHeaderParts(fields: PivotTableFieldConfig[], request: DrillDownRequest): PivotTableDrillDownHeaderPart[] {
+  return [
+    ...Object.entries(request.rowValues).map(([field, value]) => ({
+      kind: 'row' as const,
+      field,
+      label: getFieldLabel(fields, field),
+      value,
+    })),
+    ...Object.entries(request.columnValues ?? {}).map(([field, value]) => ({
+      kind: 'column' as const,
+      field,
+      label: getFieldLabel(fields, field),
+      value,
+    })),
+  ];
 }
 
 export function DrillDownPanel({
@@ -59,6 +78,7 @@ export function DrillDownPanel({
   sortState,
   onSortStateChange,
   labels,
+  renderHeader,
   onClose,
 }: DrillDownPanelProps) {
   const scopedFields = new Set([...Object.keys(request.rowValues), ...Object.keys(request.columnValues ?? {})]);
@@ -75,13 +95,25 @@ export function DrillDownPanel({
       className: field.type === 'number' ? 'pg-metric-cell' : undefined,
       copyable: field.copyable,
       valueTone: field.valueTone,
+      format: field.renderFieldCell ? (value, row) => field.renderFieldCell?.({ value, row, field, location: 'drilldown' }) : undefined,
     }));
 
-  const title = [
-    ...Object.entries(request.rowValues).map(([field, value]) => `${getFieldLabel(fields, field)}: ${value}`),
-    ...Object.entries(request.columnValues ?? {}).map(([field, value]) => `${getFieldLabel(fields, field)}: ${value}`),
-  ].join(' / ');
+  const headerParts = buildHeaderParts(fields, request);
+  const title = headerParts.map((part) => `${part.label}: ${part.value}`).join(' / ');
   const visibleRowCount = totalRows ?? rows.length;
+  const isLoading = Boolean(loading);
+  const subtitle = labels.drilldownRecordCount(isLoading ? labels.loading : visibleRowCount, entityName);
+  const headerContent = renderHeader
+    ? renderHeader({
+        request,
+        parts: headerParts,
+        defaultTitle: title,
+        defaultSubtitle: subtitle,
+        rowCount: visibleRowCount,
+        entityName,
+        loading: isLoading,
+      })
+    : null;
 
   return (
     <section className="pg-drilldown pg-view-frame" aria-label={labels.drilldownRows}>
@@ -112,8 +144,14 @@ export function DrillDownPanel({
               {labels.back}
             </button>
             <div className="pg-drilldown-title">
-              <h3>{title}</h3>
-              <p>{labels.drilldownRecordCount(loading ? labels.loading : visibleRowCount, entityName)}</p>
+              {renderHeader ? (
+                headerContent
+              ) : (
+                <>
+                  <h3>{title}</h3>
+                  <p>{subtitle}</p>
+                </>
+              )}
             </div>
           </div>
         }

@@ -71,6 +71,36 @@ When all active values use the same source field, generated metric headers stay 
 
 Each value metric is unique by the pair `{ field, aggFunc }`. Duplicate pairs are normalized away before client aggregation and before managed backend requests.
 
+Client-side value aggregation uses decimal arithmetic so large totals and fractional sums do not silently inherit JavaScript `number` precision loss. Pivot metric cells are returned as `number` when the final value can be represented safely and without loss; otherwise the metric is returned as a decimal string. Custom `formatValue` handlers should accept both `number` and `string` values.
+
+## Value Formatting
+
+Use `formatValue` to control display precision, units, and per-metric formatting. The formatter receives `(value, columnId, context)`. `columnId` remains available for existing integrations, while `context` avoids parsing generated ids:
+
+```tsx
+<PivotTable
+  data={orders}
+  fields={fields}
+  formatValue={(value, _columnId, context) => {
+    if (value == null) return '-';
+    if (context.kind === 'count') return String(value);
+    if (context.field === 'exchangeRate' && context.aggFunc === 'avg') return String(value);
+    if (context.field === 'amount') return `$${String(value)}`;
+    return String(value);
+  }}
+/>
+```
+
+The context includes:
+
+- `kind`: `count`, `value`, or `total`;
+- `field` and `aggFunc` for value metrics;
+- `valueConfig` for the active `{ field, aggFunc }` pair;
+- `pivotColumn` for generated pivot value cells;
+- `columnId` for the generated grid column.
+
+If a value arrives as a decimal string, keep it as a string unless your formatter uses decimal-aware rounding. Converting it back to `number` can lose the precision the pivot engine preserved.
+
 ## Drilldown
 
 Drilldown is automatic in client-side mode. A metric cell creates a `DrillDownRequest`, then the component filters the already-loaded rows by the clicked row and column dimension values.

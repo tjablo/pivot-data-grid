@@ -1,6 +1,16 @@
-import { getNestedValue, stringifyValue, toFiniteNumber } from './access';
+import Big from 'big.js';
+import { getNestedValue, stringifyValue, toBigNumber } from './access';
 import { normalizePivotValues } from './model';
-import type { AggregationFn, PivotColumnKey, PivotModel, PivotResult, PivotRow, PivotValueConfig, RowData } from './types';
+import type {
+  AggregationFn,
+  PivotColumnKey,
+  PivotMetricValue,
+  PivotModel,
+  PivotResult,
+  PivotRow,
+  PivotValueConfig,
+  RowData,
+} from './types';
 
 const KEY_SEPARATOR = '\u001f';
 const PIVOT_PREFIX = 'pivot__';
@@ -8,9 +18,9 @@ const TOTAL_PREFIX = '_total__';
 
 interface AggregateState {
   count: number;
-  sum: number;
-  min: number | null;
-  max: number | null;
+  sum: Big;
+  min: Big | null;
+  max: Big | null;
 }
 
 interface GroupState {
@@ -29,7 +39,20 @@ function decode(value: string): string {
 }
 
 function createAggregateState(): AggregateState {
-  return { count: 0, sum: 0, min: null, max: null };
+  return { count: 0, sum: Big(0), min: null, max: null };
+}
+
+function isInteger(value: Big): boolean {
+  return value.mod(1).eq(0);
+}
+
+function toMetricValue(value: Big): number | string {
+  const rawValue = value.toString();
+  const numericValue = Number(rawValue);
+  if (!Number.isFinite(numericValue)) return value.toFixed();
+  if (isInteger(value) && !Number.isSafeInteger(numericValue)) return value.toFixed();
+
+  return Big(numericValue.toString()).eq(value) ? numericValue : value.toFixed();
 }
 
 function addAggregate(state: AggregateState, value: unknown, aggFunc: AggregationFn): void {
@@ -38,28 +61,28 @@ function addAggregate(state: AggregateState, value: unknown, aggFunc: Aggregatio
     return;
   }
 
-  const numericValue = toFiniteNumber(value);
+  const numericValue = toBigNumber(value);
   if (numericValue == null) return;
 
   state.count += 1;
-  state.sum += numericValue;
-  state.min = state.min == null ? numericValue : Math.min(state.min, numericValue);
-  state.max = state.max == null ? numericValue : Math.max(state.max, numericValue);
+  state.sum = state.sum.plus(numericValue);
+  state.min = state.min == null || numericValue.lt(state.min) ? numericValue : state.min;
+  state.max = state.max == null || numericValue.gt(state.max) ? numericValue : state.max;
 }
 
-function readAggregate(state: AggregateState | undefined, aggFunc: AggregationFn): number | null {
+function readAggregate(state: AggregateState | undefined, aggFunc: AggregationFn): PivotMetricValue {
   if (!state) return null;
   switch (aggFunc) {
     case 'count':
       return state.count;
     case 'sum':
-      return state.count ? state.sum : null;
+      return state.count ? toMetricValue(state.sum) : null;
     case 'avg':
-      return state.count ? state.sum / state.count : null;
+      return state.count ? toMetricValue(state.sum.div(state.count)) : null;
     case 'min':
-      return state.min;
+      return state.min == null ? null : toMetricValue(state.min);
     case 'max':
-      return state.max;
+      return state.max == null ? null : toMetricValue(state.max);
     default:
       return null;
   }

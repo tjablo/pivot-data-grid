@@ -1,8 +1,80 @@
-import type { DrillDownRequest, PivotFieldConfig, PivotModel, PivotResult, RowData, SourceFilter } from '../core/types';
+import type { ReactNode } from 'react';
+import type {
+  AggregationFn,
+  DrillDownRequest,
+  PivotColumnKey,
+  PivotFieldConfig,
+  PivotMetricValue,
+  PivotModel,
+  PivotResult,
+  PivotRow,
+  PivotValueConfig,
+  RowData,
+  SourceFilter,
+} from '../core/types';
 import type { PaginationMode, PaginationState, SortState } from './DataGrid.types';
 import type { PivotTableLabelOverrides } from './labels';
 
 export type PivotTablePaginationMode = PaginationMode;
+
+export type PivotTableFieldCellLocation = 'pivot-row' | 'pivot-column' | 'drilldown';
+
+export type PivotTableFieldCellRenderArgs<T extends RowData = RowData> = {
+  /** Value resolved from the configured field path, including nested paths such as `order.product.title`. */
+  value: unknown;
+  /** Field configuration that owns this renderer. */
+  field: PivotTableFieldConfig;
+} & (
+  | {
+      /** Field value rendered in the main pivot grid row dimension area. */
+      location: 'pivot-row';
+      /** Aggregated pivot result row. */
+      row: PivotRow;
+    }
+  | {
+      /** Field value rendered in a generated pivot column header. */
+      location: 'pivot-column';
+      /** Pivot column metadata that owns this header value. */
+      pivotColumn: PivotColumnKey;
+      row?: undefined;
+    }
+  | {
+      /** Field value rendered in the drilldown source-row grid. */
+      location: 'drilldown';
+      /** Source row shown in drilldown. */
+      row: T;
+    }
+);
+
+export type PivotTableFieldCellRenderer<T extends RowData = RowData> = (args: PivotTableFieldCellRenderArgs<T>) => ReactNode;
+
+export interface PivotTableFieldConfig extends PivotFieldConfig {
+  /**
+   * Renders values for this source field when it appears as a pivot row field,
+   * generated pivot column header, or drilldown column.
+   * Aggregated metric cells still use `formatValue`.
+   */
+  renderFieldCell?: PivotTableFieldCellRenderer;
+}
+
+export interface PivotTableDrillDownHeaderPart {
+  kind: 'row' | 'column';
+  field: string;
+  label: string;
+  value: string;
+}
+
+export interface PivotTableDrillDownHeaderRenderArgs {
+  request: DrillDownRequest;
+  parts: PivotTableDrillDownHeaderPart[];
+  defaultTitle: string;
+  defaultSubtitle: string;
+  rowCount: number;
+  entityName: string;
+  loading: boolean;
+}
+
+export type PivotTableDrillDownHeaderRenderer = (args: PivotTableDrillDownHeaderRenderArgs) => ReactNode;
 
 export interface PivotTableColumnSize {
   /** Preferred generated column width in pixels. */
@@ -25,6 +97,23 @@ export interface PivotTableColumnSizing {
   /** Fallback column used before the first server result arrives. Defaults to 160px. */
   loading?: PivotTableColumnSize;
 }
+
+export interface PivotValueFormatContext {
+  /** Generated grid column id for the rendered metric cell. */
+  columnId: string;
+  /** Identifies whether the metric is the row count, a pivot-column value, or a row total. */
+  kind: 'count' | 'value' | 'total';
+  /** Active value aggregation behind this metric. Undefined for the count column. */
+  valueConfig?: PivotValueConfig;
+  /** Convenience alias for `valueConfig.field`. Undefined for the count column. */
+  field?: string;
+  /** Convenience alias for `valueConfig.aggFunc`. Undefined for the count column. */
+  aggFunc?: AggregationFn;
+  /** Pivot column metadata for generated pivot value cells. Undefined for count and total columns. */
+  pivotColumn?: PivotColumnKey;
+}
+
+export type PivotValueFormatter = (value: PivotMetricValue, columnId: string, context: PivotValueFormatContext) => string;
 
 export interface PivotTableManagedPaginationOptions {
   /** Enables the managed backend pagination control. Defaults to true. */
@@ -118,6 +207,8 @@ interface PivotTableDrillDownBaseOptions {
   mode?: 'replace' | 'inline' | 'none';
   /** Called when a metric cell creates a drilldown request, before rows are loaded. */
   onOpen?: (request: DrillDownRequest) => void;
+  /** Replaces the default drilldown header built from row/column values and record count. */
+  renderHeader?: PivotTableDrillDownHeaderRenderer;
 }
 
 export interface PivotTableDrillDownManagedOptions extends PivotTableDrillDownBaseOptions {
@@ -156,8 +247,8 @@ interface PivotTableBaseProps {
   onFiltersChange?: (filters: SourceFilter[]) => void;
   /** Entity label used in record-count text. */
   entityName?: string;
-  /** Formats numeric pivot values. Receives the numeric value and generated pivot column id. */
-  formatValue?: (value: number | null, columnId: string) => string;
+  /** Formats pivot metric values. Large or high-precision values may be strings to avoid numeric precision loss. */
+  formatValue?: PivotValueFormatter;
   /** Keeps filter menu edits local until the menu closes. Defaults to true. */
   deferFilterUpdates?: boolean;
   /** Additional class applied to the `.pg-root` wrapper for theme scoping. */
@@ -180,7 +271,7 @@ export interface PivotTableClientProps extends PivotTableBaseProps {
   pivotResult?: never;
   getPage?: never;
   /** Optional field metadata. If omitted, fields are inferred from `data`. */
-  fields?: PivotFieldConfig[];
+  fields?: PivotTableFieldConfig[];
   /** Pagination settings. Pass `false` to disable, `true` for defaults, or an object for client/controlled pagination. */
   pagination?: boolean | PivotTablePaginationOptions;
 }
@@ -191,7 +282,7 @@ export interface PivotTableServerProps extends PivotTableBaseProps {
   /** Backend-computed pivot result. In server pagination mode, `rows` should contain only the current page. */
   pivotResult: PivotResult | null | undefined;
   /** Field metadata required for toolbar labels, roles, filters, and drilldown columns. */
-  fields: PivotFieldConfig[];
+  fields: PivotTableFieldConfig[];
   /** Pagination settings. Pass `false` to disable, `true` for defaults, or an object for controlled/backend pagination. */
   pagination?: boolean | PivotTablePaginationOptions;
 }
@@ -202,7 +293,7 @@ export interface PivotTableManagedServerProps extends PivotTableBaseProps {
   /** Managed backend pivot loader. Called on mount, model/filter changes, page changes, page-size changes, and sort changes. */
   getPage: PivotTableGetPage;
   /** Field metadata required for toolbar labels, roles, filters, and drilldown columns. */
-  fields: PivotFieldConfig[];
+  fields: PivotTableFieldConfig[];
   /** Pagination settings for the managed backend pivot grid. */
   pagination?: boolean | PivotTableManagedPaginationOptions;
 }

@@ -1,6 +1,8 @@
+import Big from 'big.js';
 import type { RowData } from './types';
 
 export const EMPTY_VALUE_LABEL = 'N/A';
+const DECIMAL_NUMBER_PATTERN = /^[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?$/i;
 
 export function getNestedValue(row: RowData, path: string): unknown {
   if (!path) return undefined;
@@ -23,6 +25,20 @@ export function toFiniteNumber(value: unknown): number | null {
     return Number.isFinite(parsed) ? parsed : null;
   }
   return null;
+}
+
+export function toBigNumber(value: unknown): Big | null {
+  if (typeof value === 'number') return Number.isFinite(value) ? Big(value.toString()) : null;
+  if (typeof value !== 'string') return null;
+
+  const trimmedValue = value.trim();
+  if (!DECIMAL_NUMBER_PATTERN.test(trimmedValue)) return null;
+
+  try {
+    return Big(trimmedValue);
+  } catch {
+    return null;
+  }
 }
 
 export function toTimestamp(value: unknown): number | null {

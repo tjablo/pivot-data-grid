@@ -248,17 +248,81 @@ See [Server-side pivot mode](docs/SERVER_SIDE.md) for the backend `PivotResult` 
 | `data` | Client-mode source rows. When set, filtering, pivoting, and drilldown run in the browser. |
 | `getPage` | Recommended managed server-mode pivot loader. Receives `model`, `filters`, zero-based `page`, `sort`, and `signal`; returns `{ result, totalRows }`. |
 | `pivotResult` | Controlled server-mode pivot result. In backend pagination, pass only the current page in `pivotResult.rows`. |
-| `fields` | Field metadata for labels, roles, filters, copy buttons, value tones, and drilldown columns. Required in server mode. |
+| `fields` | Field metadata for labels, roles, filters, copy buttons, value tones, custom field cell renderers, and drilldown columns. Required in server mode. |
 | `defaultPivotModel` | Initial uncontrolled pivot model. |
 | `pivotModel` / `onPivotModelChange` | Controlled pivot model for apps that keep row/column/value selection in external state. |
 | `filters` / `onFiltersChange` | Controlled source filters shared by client and server mode. |
 | `deferFilterUpdates` | Keeps source filter menu edits local until the menu closes. Defaults to `true`. |
 | `pagination` | `false` disables pivot pagination, `true` uses defaults, and an object configures pivot page sizes, controlled state, and backend pagination. |
-| `drillDown` | Scoped drilldown behavior: managed `getPage`, `mode`, controlled `rows`, `loading`, `onOpen`, and drilldown-only `pagination`. |
-| `formatValue` | Numeric pivot-value formatter. |
+| `drillDown` | Scoped drilldown behavior: managed `getPage`, `mode`, controlled `rows`, `loading`, `onOpen`, `renderHeader`, and drilldown-only `pagination`. |
+| `formatValue` | Pivot metric formatter. Receives `(value, columnId, context)`, where `context` includes the metric kind, field, aggregation, and pivot column metadata. |
 | `columnSizing` | Width, `minWidth`, and `maxWidth` overrides for generated `row`, `count`, `value`, `total`, and fallback `loading` columns. |
 | `labels` | Overrides built-in text and count formatters. |
 | `className` | Theme scope for CSS token overrides. |
+
+Use `formatValue` when different metrics need different display precision or units. The `columnId` argument is kept for compatibility, but new code should prefer the structured context:
+
+```tsx
+<PivotTable
+  data={orders}
+  fields={fields}
+  formatValue={(value, _columnId, context) => {
+    if (value == null) return '-';
+    if (context.kind === 'count') return String(value);
+    if (context.field === 'exchangeRate' && context.aggFunc === 'avg') return String(value);
+    if (context.field === 'amount') return `$${String(value)}`;
+    return String(value);
+  }}
+/>
+```
+
+Client-side aggregation returns safe values as `number` and high-precision values as decimal `string`. If you need rounding or padding for decimal strings, use a decimal-aware formatter in `formatValue` rather than coercing those strings back to `number`.
+
+Use `renderFieldCell` on a field when a source-field value needs richer UI. The renderer receives the value resolved from the field path, so nested paths such as `order.product.constituent.ticker` do not need a helper import. It applies when the field appears as a pivot row field, generated pivot column header, or drilldown source column; aggregated metric cells still use `formatValue`. Use `location` to tailor the same renderer for `pivot-row`, `pivot-column`, and `drilldown`.
+
+```tsx
+<PivotTable
+  data={orders}
+  fields={[
+    {
+      field: 'order.product.constituent.ticker',
+      label: 'Product',
+      role: 'dimension',
+      renderFieldCell: ({ value, location }) => <ProductCell ticker={String(value)} compact={location === 'pivot-column'} />,
+    },
+    { field: 'amount', label: 'Amount', type: 'number', role: 'value' },
+  ]}
+/>
+```
+
+Use `drillDown.renderHeader` when the default `Field: value / Column: value` title and record-count subtitle should be replaced with custom UI:
+
+```tsx
+<PivotTable
+  data={orders}
+  fields={fields}
+  drillDown={{
+    renderHeader: ({ parts, defaultTitle, defaultSubtitle, rowCount, entityName }) => (
+      <DrilldownHeader
+        parts={parts}
+        fallbackTitle={defaultTitle}
+        fallbackSubtitle={defaultSubtitle}
+        rowCount={rowCount}
+        entityName={entityName}
+      />
+    ),
+  }}
+/>
+```
+
+The `parts` array contains the structured pieces used to build `defaultTitle`. Row fields use `kind: 'row'`; pivot column fields use `kind: 'column'`. `defaultSubtitle` is the built-in record-count line, and `rowCount` is the current drilldown row count.
+
+```ts
+[
+  { kind: 'row', field: 'product', label: 'Product', value: 'Laptop' },
+  { kind: 'column', field: 'region', label: 'Region', value: 'AMER' },
+]
+```
 
 Use `columnSizing` when formatted values need more horizontal space:
 

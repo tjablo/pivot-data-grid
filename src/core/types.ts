@@ -57,6 +57,8 @@ export interface PivotColumnKey {
   values: Record<string, string>;
 }
 
+export type PivotMetricValue = number | string | null;
+
 export interface PivotRow {
   id: string;
   _groupKey: string;

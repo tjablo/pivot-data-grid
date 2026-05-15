@@ -2,9 +2,11 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { pivotData } from '../core/pivot';
-import type { PivotFieldConfig, PivotModel, RowData, SourceFilter } from '../core/types';
+import type { PivotFieldConfig, PivotMetricValue, PivotModel, RowData, SourceFilter } from '../core/types';
 import { DataGrid } from '../react/DataGrid';
+import { DataGridModelService } from '../react/DataGridModelService';
 import { PivotTable } from '../react/PivotTable';
+import type { PivotTableFieldConfig, PivotValueFormatContext } from '../react/PivotTable.types';
 
 const rows: RowData[] = [
   { product: 'Laptop', region: 'EMEA', amount: 100, orderedAt: '2026-01-01' },
@@ -29,6 +31,14 @@ function deferred<T>() {
 }
 
 describe('DataGrid', () => {
+  it('sorts large numeric strings without losing precision', () => {
+    const service = new DataGridModelService();
+
+    expect(service.compareValues('9007199254740993', '9007199254740992')).toBe(1);
+    expect(service.compareValues('9007199254740992', '9007199254740993')).toBe(-1);
+    expect(service.compareValues('9007199254740993.1', '9007199254740993.01')).toBe(1);
+  });
+
   it('renders rows, allows copyable cells, and sorts when a sortable header is clicked', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     const gridRows = [...rows, { product: 'Refund', region: 'AMER', amount: -25, orderedAt: '2026-01-04' }];
@@ -251,6 +261,202 @@ describe('PivotTable', () => {
     expect(within(drilldownGrid).queryByRole('gridcell', { name: 'Laptop' })).not.toBeInTheDocument();
     expect(within(drilldownGrid).queryByRole('gridcell', { name: 'AMER' })).not.toBeInTheDocument();
     expect(within(drilldownGrid).getByRole('gridcell', { name: '200' })).toBeInTheDocument();
+  });
+
+  it('passes value formatter context for generated metric columns', () => {
+    const formatValue = vi.fn((value: PivotMetricValue, columnId: string, context: PivotValueFormatContext) => {
+      if (context.kind === 'count') return `count:${columnId}:${value}`;
+      const scope = context.kind === 'value' ? context.pivotColumn?.label : 'total';
+      return `${context.kind}:${scope}:${context.field}:${context.aggFunc}:${value}`;
+    });
+
+    render(
+      <PivotTable
+        data={rows}
+        fields={fields}
+        defaultPivotModel={{
+          rows: ['product'],
+          columns: ['region'],
+          values: [{ field: 'amount', aggFunc: 'sum' }],
+        }}
+        formatValue={formatValue}
+        pagination={false}
+      />,
+    );
+
+    expect(screen.getByRole('gridcell', { name: 'count:_count:2' })).toBeInTheDocument();
+    expect(screen.getByRole('gridcell', { name: 'value:AMER:amount:sum:200' })).toBeInTheDocument();
+    expect(screen.getByRole('gridcell', { name: 'total:total:amount:sum:300' })).toBeInTheDocument();
+    expect(formatValue).toHaveBeenCalledWith(
+      200,
+      'pivot__AMER__amount',
+      expect.objectContaining({
+        aggFunc: 'sum',
+        columnId: 'pivot__AMER__amount',
+        field: 'amount',
+        kind: 'value',
+        pivotColumn: expect.objectContaining({ label: 'AMER' }),
+        valueConfig: { field: 'amount', aggFunc: 'sum' },
+      }),
+    );
+    expect(formatValue).toHaveBeenCalledWith(
+      300,
+      '_total__amount',
+      expect.objectContaining({ aggFunc: 'sum', columnId: '_total__amount', field: 'amount', kind: 'total' }),
+    );
+    expect(formatValue).toHaveBeenCalledWith(2, '_count', expect.objectContaining({ columnId: '_count', kind: 'count' }));
+  });
+
+  it('renders custom field cells for pivot row fields and drilldown source fields', async () => {
+    const renderProductField = vi.fn(({ value, location }) => (
+      <span data-testid={`pivot-product-${String(value)}`}>SKU {String(value)} {location}</span>
+    ));
+    const renderAmountField = vi.fn(({ value, location }) => (
+      <span data-testid={`source-amount-${String(value)}`}>source amount {String(value)} {location}</span>
+    ));
+    const richFields: PivotTableFieldConfig[] = fields.map((field) => {
+      if (field.field === 'product') {
+        return {
+          ...field,
+          renderFieldCell: renderProductField,
+        };
+      }
+      if (field.field === 'amount') {
+        return {
+          ...field,
+          renderFieldCell: renderAmountField,
+        };
+      }
+      return field;
+    });
+
+    render(
+      <PivotTable
+        data={rows}
+        fields={richFields}
+        defaultPivotModel={{
+          rows: ['product'],
+          columns: ['region'],
+          values: [{ field: 'amount', aggFunc: 'sum' }],
+        }}
+        pagination={false}
+      />,
+    );
+
+    expect(screen.getByTestId('pivot-product-Laptop')).toBeInTheDocument();
+    expect(renderProductField).toHaveBeenCalledWith(expect.objectContaining({ location: 'pivot-row', value: 'Laptop' }));
+    expect(within(screen.getByRole('grid')).getAllByRole('gridcell', { name: '200' })[0]).toBeInTheDocument();
+    expect(screen.queryByTestId('source-amount-200')).not.toBeInTheDocument();
+
+    fireEvent.click(within(screen.getByRole('grid')).getAllByRole('gridcell', { name: '200' })[0]);
+
+    const drilldown = await screen.findByRole('region', { name: 'Drilldown rows' });
+    expect(within(drilldown).getByTestId('source-amount-200')).toBeInTheDocument();
+    expect(renderAmountField).toHaveBeenCalledWith(expect.objectContaining({ location: 'drilldown', value: 200 }));
+  });
+
+  it('renders custom field cells for generated pivot column headers', () => {
+    const renderProductField = vi.fn(({ value, location }) => (
+      <span data-testid={`column-product-${String(value)}`}>Column {String(value)} {location}</span>
+    ));
+    const columnFields: PivotTableFieldConfig[] = fields.map((field) =>
+      field.field === 'product'
+        ? {
+            ...field,
+            renderFieldCell: renderProductField,
+          }
+        : field,
+    );
+
+    render(
+      <PivotTable
+        data={rows}
+        fields={columnFields}
+        defaultPivotModel={{
+          rows: ['region'],
+          columns: ['product'],
+          values: [{ field: 'amount', aggFunc: 'sum' }],
+        }}
+        pagination={false}
+      />,
+    );
+
+    expect(screen.getByTestId('column-product-Laptop')).toBeInTheDocument();
+    expect(screen.getByTestId('column-product-Monitor')).toBeInTheDocument();
+    expect(renderProductField).toHaveBeenCalledWith(
+      expect.objectContaining({
+        location: 'pivot-column',
+        value: 'Laptop',
+        pivotColumn: expect.objectContaining({ values: { product: 'Laptop' } }),
+      }),
+    );
+  });
+
+  it('allows field renderers to render different content for rows and pivot column headers', () => {
+    const renderProductField = vi.fn(({ value, location }) => {
+      if (location === 'pivot-row') {
+        return <span data-testid={`row-product-icon-${String(value)}`}>Icon {String(value)}</span>;
+      }
+
+      return String(value);
+    });
+    const conditionalFields: PivotTableFieldConfig[] = fields.map((field) =>
+      field.field === 'product'
+        ? {
+            ...field,
+            renderFieldCell: renderProductField,
+          }
+        : field,
+    );
+
+    render(
+      <PivotTable
+        data={rows}
+        fields={conditionalFields}
+        defaultPivotModel={{
+          rows: ['product'],
+          columns: ['product'],
+          values: [{ field: 'amount', aggFunc: 'sum' }],
+        }}
+        pagination={false}
+      />,
+    );
+
+    expect(screen.getByTestId('row-product-icon-Laptop')).toBeInTheDocument();
+    expect(screen.queryByTestId('column-product-icon-Laptop')).not.toBeInTheDocument();
+    expect(renderProductField).toHaveBeenCalledWith(expect.objectContaining({ location: 'pivot-row', value: 'Laptop' }));
+    expect(renderProductField).toHaveBeenCalledWith(expect.objectContaining({ location: 'pivot-column', value: 'Laptop' }));
+  });
+
+  it('renders a custom drilldown header', async () => {
+    render(
+      <PivotTable
+        data={rows}
+        fields={fields}
+        defaultPivotModel={{
+          rows: ['product'],
+          columns: ['region'],
+          values: [{ field: 'amount', aggFunc: 'sum' }],
+        }}
+        drillDown={{
+          renderHeader: ({ parts, defaultTitle, defaultSubtitle, rowCount, entityName, loading }) => (
+            <div data-testid="custom-drilldown-header">
+              {defaultTitle} ({parts.map((part) => `${part.kind}:${part.label}:${part.value}`).join(', ')})
+              <span>
+                {defaultSubtitle}:{rowCount}:{entityName}:{String(loading)}
+              </span>
+            </div>
+          ),
+        }}
+      />,
+    );
+
+    fireEvent.click(within(screen.getByRole('grid')).getAllByRole('gridcell', { name: '200' })[0]);
+
+    const header = await screen.findByTestId('custom-drilldown-header');
+    expect(header).toHaveTextContent('Product: Laptop / Region: AMER (row:Product:Laptop, column:Region:AMER)');
+    expect(header).toHaveTextContent('1 records:1:records:false');
+    expect(screen.queryByRole('heading', { name: 'Product: Laptop / Region: AMER' })).not.toBeInTheDocument();
   });
 
   it('renders and edits multiple value aggregations from the toolbar', async () => {

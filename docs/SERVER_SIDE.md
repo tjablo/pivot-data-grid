@@ -72,6 +72,10 @@ Value configs are unique by `{ field, aggFunc }`. `PivotTable` normalizes duplic
 - one property per generated pivot value column.
 - one property per generated row total column.
 
+Metric values may be numbers or decimal strings. Use strings for backend totals that would exceed JavaScript safe integer precision or otherwise lose decimal precision when serialized as JSON numbers.
+
+`formatValue` receives the same structured context in server mode as in client mode, so apps can format backend metrics by `context.field`, `context.aggFunc`, `context.kind`, and `context.pivotColumn` without parsing generated column ids.
+
 `PivotResult.columns` describes the pivot column dimension combinations. Each item should include:
 
 - `id`: stable column key for that dimension combination. It can be any deterministic string, as long as the generated value cells use the same id.

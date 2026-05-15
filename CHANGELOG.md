@@ -6,6 +6,17 @@ This project follows Semantic Versioning.
 
 ## [Unreleased]
 
+### Added
+
+- `PivotTable` fields can now define `renderFieldCell` to render custom React content for pivot row field cells, generated pivot column headers, and drilldown source cells, with a `location` argument for context-specific UI.
+- `PivotTable` drilldown options now support `renderHeader` for replacing the drilldown header with custom React content, including structured row/column parts and record-count metadata.
+- `PivotTable.formatValue` now receives a structured context with the metric kind, generated column id, value aggregation config, field, aggregation, and pivot column metadata.
+- Client-side pivot aggregation uses decimal arithmetic for sums, averages, minimums, and maximums, preserving large or high-precision results as decimal strings when a JavaScript number would lose precision.
+
+### Changed
+
+- `PivotTable.formatValue` accepts `number | string | null` metric values so high-precision aggregation results can be displayed without coercion back to unsafe JavaScript numbers.
+
 ## [0.1.0-alpha.1] - 2026-05-14
 
 ### Added
