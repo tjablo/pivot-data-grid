@@ -6,7 +6,7 @@ This project follows Semantic Versioning.
 
 ## [Unreleased]
 
-## [0.1.0-alpha.3] - 2026-05-15
+## [0.1.0-alpha.2] - 2026-05-15
 
 ### Added
 
@@ -67,7 +67,7 @@ This project follows Semantic Versioning.
 
 ### Fixed
 
-[Unreleased]: https://github.com/tjablo/pivot-data-grid/compare/v0.1.0-alpha.3...HEAD
-[0.1.0-alpha.3]: https://github.com/tjablo/pivot-data-grid/compare/v0.1.0-alpha.1...v0.1.0-alpha.3
+[Unreleased]: https://github.com/tjablo/pivot-data-grid/compare/v0.1.0-alpha.2...HEAD
+[0.1.0-alpha.2]: https://github.com/tjablo/pivot-data-grid/compare/v0.1.0-alpha.1...v0.1.0-alpha.2
 [0.1.0-alpha.1]: https://github.com/tjablo/pivot-data-grid/compare/v0.1.0-alpha.0...v0.1.0-alpha.1
 [0.1.0-alpha.0]: https://github.com/tjablo/pivot-data-grid/releases/tag/v0.1.0-alpha.0
