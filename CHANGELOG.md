@@ -6,6 +6,21 @@ This project follows Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.1.0-alpha.3] - 2026-07-02
+
+### Added
+
+- README now includes a short demo GIF showing the playground flow.
+- Playground example code uses local demo icons instead of asking consumers to install an icon package.
+
+### Changed
+
+- Embedded control icons now use local MIT-licensed Feather icon paths, with a project-authored list-filter icon and third-party notices included in the published docs.
+
+### Fixed
+
+- Server-side playground examples now pass sort state through the mocked API layer for pivot and drilldown pagination.
+
 ## [0.1.0-alpha.2] - 2026-05-15
 
 ### Added
@@ -67,7 +82,8 @@ This project follows Semantic Versioning.
 
 ### Fixed
 
-[Unreleased]: https://github.com/tjablo/pivot-data-grid/compare/v0.1.0-alpha.2...HEAD
+[Unreleased]: https://github.com/tjablo/pivot-data-grid/compare/v0.1.0-alpha.3...HEAD
+[0.1.0-alpha.3]: https://github.com/tjablo/pivot-data-grid/compare/v0.1.0-alpha.2...v0.1.0-alpha.3
 [0.1.0-alpha.2]: https://github.com/tjablo/pivot-data-grid/compare/v0.1.0-alpha.1...v0.1.0-alpha.2
 [0.1.0-alpha.1]: https://github.com/tjablo/pivot-data-grid/compare/v0.1.0-alpha.0...v0.1.0-alpha.1
 [0.1.0-alpha.0]: https://github.com/tjablo/pivot-data-grid/releases/tag/v0.1.0-alpha.0
