@@ -82,7 +82,7 @@ const formatNumberCode = `function formatNumber(value: unknown): string {
 
 function getClientPivotCode(theme: ThemeMode) {
   return `import { useMemo } from 'react';
-import { Globe2, Package } from 'lucide-react';
+import { Globe2, Package } from './icons';
 import { PivotTable, type PivotTableFieldConfig, type PivotModel, type RowData } from 'pivot-grid-table';
 import 'pivot-grid-table/styles.css';
 

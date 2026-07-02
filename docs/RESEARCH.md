@@ -1,6 +1,6 @@
 # Research and License Review
 
-Research date: 2026-05-12.
+Research date: 2026-06-26.
 
 ## Dependency Licensing
 
@@ -11,7 +11,7 @@ Research date: 2026-05-12.
 | Radix UI Dropdown Menu | Accessible column visibility menu primitive | MIT | https://github.com/radix-ui/primitives/blob/main/LICENSE |
 | Radix UI Popover | Date picker popover primitive | MIT | https://github.com/radix-ui/primitives/blob/main/LICENSE |
 | Radix UI Select | Accessible non-native select controls | MIT | https://github.com/radix-ui/primitives/blob/main/LICENSE |
-| Lucide React | Shared icon set for controls and actions | ISC | https://www.npmjs.com/package/lucide-react |
+| Feather icon paths | Embedded control and action icon paths adapted from Feather Icons, plus a project-authored list-filter icon | MIT | https://github.com/feathericons/feather/blob/master/LICENSE |
 | clsx | Class name composition | MIT | https://www.npmjs.com/package/clsx |
 | Tailwind CSS | Optional consumer styling bridge, not runtime dependency | MIT | https://github.com/tailwindlabs/tailwindcss/blob/master/LICENSE |
 | Vitest / coverage-v8 | Tests and coverage | MIT | https://www.npmjs.com/package/vitest |

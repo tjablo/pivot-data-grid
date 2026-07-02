@@ -1,9 +1,9 @@
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import * as Select from '@radix-ui/react-select';
-import { Check, ChevronDown, ListFilter, Plus, Trash2, X } from 'lucide-react';
 
 import type { AggregationFn, PivotFieldConfig, PivotModel, PivotValueConfig, SourceFilter } from '../core/types';
 import { DatePicker } from './DatePicker';
+import { Check, ChevronDown, ListFilter, Plus, Trash2, X } from './icons';
 import type { PivotTableLabels } from './labels';
 import { pivotFilterService } from './PivotFilterService';
 import { usePortalContainer } from './portalContext';

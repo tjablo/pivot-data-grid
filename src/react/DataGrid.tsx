@@ -2,13 +2,13 @@ import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import * as Select from '@radix-ui/react-select';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import clsx from 'clsx';
-import { ArrowDown, ArrowUp, Check, ChevronDown, ChevronLeft, ChevronRight, Copy } from 'lucide-react';
 import { type KeyboardEvent, type MouseEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { RowData } from '../core/types';
 import type { DataGridColumn, DataGridProps, PaginationState, SortState } from './DataGrid.types';
 import { dataGridBrowserService } from './DataGridBrowserService';
 import { dataGridModelService } from './DataGridModelService';
+import { ArrowDown, ArrowUp, Check, ChevronDown, ChevronLeft, ChevronRight, Copy } from './icons';
 import { resolveDataGridLabels } from './labels';
 import { usePortalContainer } from './portalContext';
 import { useElementWidth } from './useElementWidth';

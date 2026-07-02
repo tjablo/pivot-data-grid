@@ -1,8 +1,8 @@
-import { ArrowLeft } from 'lucide-react';
 import { getNestedValue } from '../core/access';
 import type { DrillDownRequest, RowData } from '../core/types';
 import { DataGrid } from './DataGrid';
 import type { DataGridColumn, PaginationMode, PaginationState, SortMode, SortState } from './DataGrid.types';
+import { ArrowLeft } from './icons';
 import type { PivotTableLabels } from './labels';
 import type { PivotTableDrillDownHeaderPart, PivotTableDrillDownHeaderRenderer, PivotTableFieldConfig } from './PivotTable.types';
 

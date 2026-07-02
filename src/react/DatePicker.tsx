@@ -1,7 +1,7 @@
 import * as Popover from '@radix-ui/react-popover';
-import { CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
+import { CalendarDays, ChevronLeft, ChevronRight } from './icons';
 import { usePortalContainer } from './portalContext';
 
 export interface DatePickerLabels {

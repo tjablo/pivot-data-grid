@@ -1,7 +1,7 @@
-import { Clipboard, Code2 } from 'lucide-react';
 import { useState } from 'react';
 
 import { getUsageCode, themeCode } from '../codeSamples';
+import { Clipboard, Code2 } from '../icons';
 import type { ThemeMode, ViewMode } from '../types';
 import { SyntaxHighlightedCode } from './SyntaxHighlightedCode';
 

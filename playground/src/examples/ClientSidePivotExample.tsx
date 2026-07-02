@@ -1,7 +1,7 @@
-import { Globe2, Package } from 'lucide-react';
 import { useMemo } from 'react';
 import { PivotTable, type PivotTableFieldConfig, type RowData } from '../../../src';
 import { defaultPivotModel, fields, formatPlaygroundNumber } from '../demoData';
+import { Globe2, Package } from '../icons';
 import type { ThemeMode } from '../types';
 
 interface ClientSidePivotExampleProps {

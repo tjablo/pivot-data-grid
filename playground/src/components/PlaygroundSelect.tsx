@@ -1,6 +1,6 @@
 import * as Select from '@radix-ui/react-select';
-import { Check, ChevronDown } from 'lucide-react';
 
+import { Check, ChevronDown } from '../icons';
 import type { PlaygroundOption } from '../types';
 
 interface PlaygroundSelectProps<TValue extends string> {
